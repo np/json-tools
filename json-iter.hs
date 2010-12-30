@@ -5,13 +5,19 @@ import System.Environment (getArgs)
 import System.Exit (ExitCode)
 import System.IO (hClose)
 import System.IO.Unsafe (unsafeInterleaveIO)
-import Text.JSON
 import qualified System.Process as P
+import Text.JSON hiding (decode)
+import Text.JSON.Parsec (p_value)
+import Text.ParserCombinators.Parsec (parse)
 import qualified System.IO.UTF8 as UTF8
 
 unRes :: Result b -> b
 unRes (Ok r)    = r
 unRes (Error s) = error $ "JSON decoding: " ++ s
+
+decode :: String -> Result JSValue
+decode = either (Error . show) Ok . parse p_value "<input>"
+
 
 decodeFile :: FilePath -> IO (Result JSValue)
 decodeFile fp = decode <$> UTF8.readFile fp

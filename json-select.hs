@@ -3,10 +3,15 @@ import Data.List
 import Data.Monoid
 import Control.Monad
 import Control.Arrow
-import Text.JSON
+import Text.JSON hiding (decode)
+import Text.JSON.Parsec (p_value)
+import Text.ParserCombinators.Parsec (parse)
 import System.Environment (getArgs)
 import System.IO (stderr)
 import qualified System.IO.UTF8 as UTF8
+
+decode :: String -> Result JSValue
+decode = either (Error . show) Ok . parse p_value "<input>"
 
 data JSContext = JSTip
                | JSArrayCxt [JSValue] JSContext [JSValue]
