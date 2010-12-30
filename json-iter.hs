@@ -6,32 +6,25 @@ import System.Exit (ExitCode)
 import System.IO (hClose)
 import System.IO.Unsafe (unsafeInterleaveIO)
 import qualified System.Process as P
-import Text.JSON hiding (decode)
-import Text.JSON.Parsec (p_value)
-import Text.ParserCombinators.Parsec (parse)
-import qualified System.IO.UTF8 as UTF8
+import Text.JSON.AttoJSON
+import qualified Data.ByteString as S
 
-unRes :: Result b -> b
-unRes (Ok r)    = r
-unRes (Error s) = error $ "JSON decoding: " ++ s
+err :: String -> a
+err s = error $ "JSON decoding: " ++ s
 
-decode :: String -> Result JSValue
-decode = either (Error . show) Ok . parse p_value "<input>"
-
-
-decodeFile :: FilePath -> IO (Result JSValue)
-decodeFile fp = decode <$> UTF8.readFile fp
+decodeFile :: FilePath -> IO (Either String JSValue)
+decodeFile fp = parseJSON <$> S.readFile fp
 
 parseJSONFiles :: [FilePath] -> IO [JSValue]
-parseJSONFiles [] = (:[]) . unRes . decodeStrict <$> getContents
-parseJSONFiles xs = mapM (unsafeInterleaveIO . fmap unRes . decodeFile) xs
+parseJSONFiles [] = (:[]) . either err id . parseJSON <$> S.getContents
+parseJSONFiles xs = mapM (unsafeInterleaveIO . fmap (either err id) . decodeFile) xs
 
-systemWithStdin :: String -> String -> IO ExitCode
+systemWithStdin :: String -> S.ByteString -> IO ExitCode
 systemWithStdin shellCmd input = do
   (Just stdinHdl, _, _, pHdl) <-
      P.createProcess (P.shell shellCmd){ P.std_in = P.CreatePipe }
   handle (\(_ :: IOException) -> return ()) $ do
-    UTF8.hPutStr stdinHdl input
+    S.hPutStr stdinHdl input
     hClose stdinHdl
   P.waitForProcess pHdl
 
@@ -41,7 +34,7 @@ unSequence _           = error "unSequence: a JSON sequence was expected"
 
 iterJSON :: String -> [String] -> IO ()
 iterJSON cmd jsonfiles =
-  mapM_ (mapM_ (systemWithStdin cmd . encode) . unSequence)
+  mapM_ (mapM_ (systemWithStdin cmd . showJSON) . unSequence)
     =<< parseJSONFiles jsonfiles
 
 main :: IO ()

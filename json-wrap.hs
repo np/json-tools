@@ -1,17 +1,18 @@
-import Data.List (intercalate)
-import Text.JSON hiding (decode)
-import Text.JSON.Parsec (p_value)
-import Text.ParserCombinators.Parsec (parse)
-import qualified System.IO.UTF8 as UTF8
+{-# LANGUAGE OverloadedStrings #-}
+import Data.List (intersperse)
+import Data.Map (toList)
+import Data.Monoid
+import Text.JSON.AttoJSON
+import qualified Data.ByteString as S
 
-decode :: String -> Result JSValue
-decode = either (Error . show) Ok . parse p_value "<input>"
+-- wrap, as in line-wrapping
 
 main :: IO ()
-main = UTF8.putStr . f . unRes . decodeStrict =<< UTF8.getContents
-  where f (JSArray a)   = '[' : intercalate "\n," (map encode a) ++ "]"
-        f (JSObject o)  = '{' : intercalate "\n," (map g $ fromJSObject o) ++ "}"
+main = mapM_ S.putStr . ($[]) . f . either err id . parseJSON =<< S.getContents
+  where f (JSArray a)   = t"[" . cat (intersperse (t"\n,") (map (t . showJSON) a)) . t"]"
+        f (JSObject o)  = t"{" . cat (intersperse (t"\n,") (map g . toList $ o)) . t"}"
         f _             = error "impossible by decodeStrict post-condition"
-        g (key, val)    = encode key ++ ':' : encode val
-        unRes (Ok r)    = r
-        unRes (Error s) = error $ "JSON decoding: " ++ s
+        g (key, val)    = t key . t ":" . (t . showJSON) val
+        err s           = error $ "JSON decoding: " ++ s
+        t x             = (x:)
+        cat             = appEndo . mconcat . map Endo
