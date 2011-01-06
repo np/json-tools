@@ -118,7 +118,7 @@ usage msg = mapM_ (hPutStrLn stderr)
   ,"path ::=                        # A path can be empty"
   ,"       | '/' <segment> <path>   # Chain a path segment and a path"
   ,""
-  ,"segement ::= '\"' <char>* '\"'  # Access the object/mapping at the given key"
+  ,"segement ::= '\"' <char>* '\"'    # Access the object/mapping at the given key"
   ,"           | [ '0' - '9' ]*     # Access the array/sequence at the given index"
   ,"           | '*'                # Keep all children of the given node (requires -m)"
   ,""
