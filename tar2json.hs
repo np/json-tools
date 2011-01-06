@@ -1,5 +1,4 @@
 import Codec.Archive.Tar as Tar
-import Codec.Archive.Tar.Entry
 import Data.Convertible.Base (convertSuccess)
 import Data.Object
 import Data.Object.Json as Json
@@ -9,7 +8,7 @@ import qualified Data.ByteString.Lazy as L
 import System.IO
 
 tar2json :: Tar.Entries -> JsonObject
-tar2json es = Mapping [(k,v) | (k,Just v) <- entries es] where
+tar2json es0 = Mapping [(k,v) | (k,Just v) <- entries es0] where
 
   entries :: Tar.Entries -> [(S.ByteString, Maybe JsonObject)]
   entries Done         = []

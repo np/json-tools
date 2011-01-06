@@ -7,7 +7,7 @@ main = S.putStr . showJSON          -- printing the output
      . JSArray                      -- building the result
      . map err                      -- error handling
      . map (second parseJSON)       -- parsing a line
-     . zip [1..]                    -- number lines
+     . zip [1::Integer ..]          -- number lines
      . S.lines                      -- cut into a list of lines
      =<< S.getContents              -- reading the input
   where
