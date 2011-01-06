@@ -44,7 +44,7 @@ executable json-strings
 
 executable json-unlines
     main-is: json-unlines.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring
+    Build-depends: base>=3&&<5, bytestring
     ghc-options: -Wall -Odph
 
 executable json-wrap

@@ -1,15 +1,18 @@
-import Text.JSON.AttoJSON
-import qualified Data.ByteString.Char8 as S
-import Control.Arrow (second)
+{-# LANGUAGE OverloadedStrings #-}
+import qualified Data.ByteString.Char8 as L
+import System.Environment
+
+-- utility function
+getAllContents :: IO L.ByteString
+getAllContents =
+  do args <- getArgs
+     if null args
+      then L.getContents
+      else fmap L.concat . mapM file $ args
+  where file "-" = L.getContents
+        file xs  = L.readFile xs
 
 main :: IO ()
-main = S.putStr . showJSON          -- printing the output
-     . JSArray                      -- building the result
-     . map err                      -- error handling
-     . map (second parseJSON)       -- parsing a line
-     . zip [1::Integer ..]          -- number lines
-     . S.lines                      -- cut into a list of lines
-     =<< S.getContents              -- reading the input
-  where
-  err (ln, Left msg) = error $ "JSON parsing: (line "++show ln++"): "++msg
-  err (_,  Right x)  = x
+main = do
+  L.putStrLn . L.cons '[' . L.intercalate "\n," . L.lines =<< getAllContents
+  L.putStrLn "]"
