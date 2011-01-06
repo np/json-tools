@@ -1,12 +1,11 @@
-import Data.Maybe
 import Data.List
 import Data.Monoid
 import qualified Data.Map as M
-import Control.Monad
 import Control.Arrow
 import Text.JSON.AttoJSON
 import System.Environment (getArgs)
 import System.IO (stderr, hPutStrLn)
+import System.Exit
 import qualified Data.ByteString as S
 
 type JSObject a = M.Map S.ByteString a
@@ -36,7 +35,7 @@ selectJSONSegment :: JSSegment -> JSValue -> Either String (JSFrame, JSValue)
 selectJSONSegment (JSArrayIndex ix) (JSArray vs)
   = case splitAt ix vs of
       (prefix, v : suffix) -> Right (JSArrayFrm prefix suffix, v)
-      (prefix, [])         -> Left msg
+      (_, [])              -> Left msg
   where msg = "An array with an index "++show ix++" was expected"
 selectJSONSegment (JSObjectKey   f) (JSObject o)
   = maybe (Left msg) ok . M.lookup f $ o
@@ -46,20 +45,6 @@ selectJSONSegment (JSArrayIndex  _) _
   = Left "An array was expected"
 selectJSONSegment (JSObjectKey   _) _
   = Left "An object was expected"
-
-  {-
-selectJSONSegment :: JSValue -> JSSegment -> Either String JSValue
-selectJSONSegment (JSArray vs) (JSArrayIndex ix)
-  = maybe (Left msg) Right . listToMaybe $ drop ix vs
-  where msg = "An array with an index "++show ix++" was expected"
-selectJSONSegment (JSObject o) (JSObjectKey   f)
-  = maybe (Left msg) Right . lookup f . fromJSObject $ o
-  where msg = "An object with a field "++show f++" was expected"
-selectJSONSegment _            (JSArrayIndex  _)
-  = Left "An array was expected"
-selectJSONSegment _            (JSObjectKey   _)
-  = Left "An object was expected"
-  -}
 
 selectJSON :: JSCxtValue -> JSPath -> (JSContext, Either String JSValue)
 selectJSON (cxt,val) [] = (cxt, Right val)
@@ -71,9 +56,6 @@ zips _ [] = error "zips: empty list"
 zips f (y : ys) = go [] y ys
   where go sx x []                = [f (reverse sx) x []]
         go sx x xs@(xs'x : xs'xs) = f (reverse sx) x xs : go (x : sx) xs'x xs'xs
-
-deleteKey :: Eq a => a -> [(a, b)] -> [(a, b)]
-deleteKey k = filter ((/=k) . fst)
 
 allSubValues :: JSCxtValue -> [JSCxtValue]
 allSubValues (_,   JSArray []) = []
@@ -94,7 +76,7 @@ selectMultiJSON cxtval (mp : ps) = selectJSONMaybeSegment mp cxtval >>= flip sel
 type Reader a = String -> (a, String)
 
 readJSSegment :: Reader JSSegment
-readJSSegment xs@('"':_) = case reads xs of
+readJSSegment xs@('"':_) = case reads xs of -- TODO maybe we should use the JSON syntax for literal strings
                              [r] -> first JSObjectKey r
                              _   -> error "Parse error: malformed string (when reading path segment)"
 readJSSegment xs         = case reads xs of
@@ -129,14 +111,31 @@ distrEitherPair :: (a, Either b c) -> Either (a, b) (a, c)
 distrEitherPair (a, Left  b) = Left  (a, b)
 distrEitherPair (a, Right c) = Right (a, c)
 
+usage :: String -> IO a
+usage msg = mapM_ (hPutStrLn stderr)
+  ["Usage: json-select [-m] <path>"
+  ,""
+  ,"path ::=                        # A path can be empty"
+  ,"       | '/' <segment> <path>   # Chain a path segment and a path"
+  ,""
+  ,"segement ::= '\"' <char>* '\"'  # Access the object/mapping at the given key"
+  ,"           | [ '0' - '9' ]*     # Access the array/sequence at the given index"
+  ,"           | '*'                # Keep all children of the given node (requires -m)"
+  ,""
+  ,msg] >> exitFailure
+
 main :: IO ()
 main = do
   args <- getArgs
-  obj <- either fail return . parseJSON =<< S.getContents
+  let pobj = either fail return . parseJSON =<< S.getContents
   case args of
+    [] -> usage "Too few arguments"
     ["-m", path] ->
-      S.putStrLn . showJSON . JSArray . map snd . selectMultiJSON ([], obj) . readJSMultiPath $ path
+      do obj <- pobj
+         S.putStrLn . showJSON . JSArray . map snd . selectMultiJSON ([], obj) . readJSMultiPath $ path
     [path] ->
-      either err (S.putStrLn . showJSON . snd) . distrEitherPair $ selectJSON ([], obj) (readJSPath path)
+      do obj <- pobj
+         either err (S.putStrLn . showJSON . snd) . distrEitherPair $ selectJSON ([], obj) (readJSPath path)
       where err (cxt, msg) = hPutStrLn stderr $ (showString msg . showString "\nLocation in the structure: " . showJSPath (pathFromContext cxt)) ""
+    _ -> usage "Too many arguments"
 
