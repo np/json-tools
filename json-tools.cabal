@@ -1,6 +1,6 @@
 Name:           json-tools
 Cabal-Version:  >=1.6
-Version:        0.2.2
+Version:        0.2.3
 License:        BSD3
 License-File:   LICENSE
 Copyright:      (c) Nicolas Pouillard
