@@ -18,5 +18,5 @@ main = do
   case args of
     [key] ->
       S.putStrLn . showJSON . JSArray $ deepSelectKey (S8.pack key) obj
-    _ -> error "usage: json-deep-select-key <key>"
+    _ -> error "Usage: json-deep-select-key <key>"
 
