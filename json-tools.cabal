@@ -1,6 +1,6 @@
 Name:           json-tools
 Cabal-Version:  >=1.6
-Version:        0.2.3
+Version:        0.2.4
 License:        BSD3
 License-File:   LICENSE
 Copyright:      (c) Nicolas Pouillard
@@ -35,6 +35,7 @@ executable json-iter
 executable json-lines
     main-is: json-lines.hs
     Build-depends: base>=3&&<5, AttoJson, bytestring
+    Other-modules: Utils
     ghc-options: -Wall -Odph
 
 executable json-strings
@@ -45,6 +46,7 @@ executable json-strings
 executable json-unlines
     main-is: json-unlines.hs
     Build-depends: base>=3&&<5, bytestring
+    Other-modules: Utils
     ghc-options: -Wall -Odph
 
 executable json-wrap
