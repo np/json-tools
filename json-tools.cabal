@@ -66,6 +66,11 @@ executable tar2json
                    text, tar>=0.4.0
     ghc-options: -Wall -Odph
 
+executable json-quote
+    main-is: json-quote.hs
+    Build-depends: base>=3&&<5, aeson, text
+    ghc-options: -Wall -Odph
+
 source-repository head
     type:     git
     location: git://github.com/np/json-tools.git
