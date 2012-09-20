@@ -1,5 +1,7 @@
-import Text.JSON.AttoJSON
-import qualified Data.ByteString as S
+import Data.Aeson
+import qualified Data.Vector as V
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
 import Control.Monad (when)
 import System.IO (hPutStrLn, stderr)
 import System.Exit (exitFailure)
@@ -16,11 +18,11 @@ usage = mapM_ (hPutStrLn stderr)
 main :: IO ()
 main = do args <- getArgs
           when (not . null $ args) usage
-          S.putStrLn . showJSON . jsonConcat . either err id . parseJSON
-            =<< S.getContents
-  where jsonConcat (JSArray a)  = JSArray (concatMap unJSArray a)
-        jsonConcat (JSObject _) = error "unexpected non-JSON array"
-        jsonConcat _            = error "not a JSON document (neither array, nor object)"
-        unJSArray (JSArray a)   = a
-        unJSArray _             = error "unexpected non-JSON array"
-        err s                   = error $ "JSON decoding: " ++ s
+          L8.putStrLn . encode . jsonConcat . maybe err id . decode'
+            =<< L.getContents
+  where jsonConcat (Array a)  = Array (V.concatMap unArray a)
+        jsonConcat (Object _) = error "unexpected non-JSON array"
+        jsonConcat _          = error "not a JSON document (neither array, nor object)"
+        unArray (Array a)     = a
+        unArray _             = error "unexpected non-JSON array"
+        err                   = error "JSON decoding error"

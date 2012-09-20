@@ -14,7 +14,7 @@ Build-Type:     Simple
 
 executable json-concat
     main-is: json-concat.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring
+    Build-depends: base>=3&&<5, aeson, bytestring
     ghc-options: -Wall -Odph
 
 executable json-deep-select-key
