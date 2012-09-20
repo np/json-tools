@@ -52,7 +52,7 @@ executable json-unlines
 
 executable json-wrap
     main-is: json-wrap.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring
+    Build-depends: base>=3&&<5, aeson, bytestring, vector
     ghc-options: -Wall -Odph
 
 executable json-xargs

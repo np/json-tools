@@ -1,18 +1,22 @@
 {-# LANGUAGE OverloadedStrings #-}
 import Data.List (intersperse)
-import Data.Map (toList)
 import Data.Monoid
-import Text.JSON.AttoJSON
-import qualified Data.ByteString as S
+import Data.Aeson
+import Data.Maybe
+import qualified Data.HashMap.Strict as HM
+import qualified Data.Vector as V
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
 
 -- wrap, as in line-wrapping
 
 main :: IO ()
-main = mapM_ S.putStr . ($["\n"]) . f . either err id . parseJSON =<< S.getContents
-  where f (JSArray a)   = t"[" . cat (intersperse (t"\n,") (map (t . showJSON) a)) . t"]"
-        f (JSObject o)  = t"{" . cat (intersperse (t"\n,") (map g . toList $ o)) . t"}"
-        f _             = error "impossible by decodeStrict post-condition"
-        g (key, val)    = t key . t ":" . (t . showJSON) val
-        err s           = error $ "JSON decoding: " ++ s
-        t x             = (x:)
-        cat             = appEndo . mconcat . map Endo
+main = mapM_ L.putStr . ($["\n"]) . f . fromMaybe err . decode' =<< L.getContents
+  where f (Array a)   = t"[" . cat (intersperse (t"\n,") (map j . V.toList $ a)) . t"]"
+        f (Object o)  = t"{" . cat (intersperse (t"\n,") (map g . HM.toList $ o)) . t"}"
+        f _           = error "impossible by decodeStrict post-condition"
+        g (key, val)  = t (encode key) . t(L8.pack ":") . j val
+        j             = t . encode
+        err           = error "JSON decoding"
+        t x           = (x:)
+        cat           = appEndo . mconcat . map Endo
