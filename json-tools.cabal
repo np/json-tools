@@ -57,7 +57,7 @@ executable json-wrap
 
 executable json-xargs
     main-is: json-xargs.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring
+    Build-depends: base>=3&&<5, aeson, bytestring
     ghc-options: -Wall -Odph
 
 executable tar2json
