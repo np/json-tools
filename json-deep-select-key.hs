@@ -6,13 +6,13 @@ import qualified Data.Vector as V
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 
-deepSelectKey :: T.Text -> Value -> [Value]
+deepSelectKey :: T.Text -> Value -> V.Vector Value
 deepSelectKey key (Array vs)
-  = concatMap (deepSelectKey key) (V.toList vs)
+  = V.concatMap (deepSelectKey key) vs
 deepSelectKey key (Object o)
-  = maybe (concatMap (deepSelectKey key) (map snd (HM.toList o))) return
+  = maybe (V.concatMap (deepSelectKey key) (V.fromList $ HM.elems o)) return
   . HM.lookup key $ o
-deepSelectKey _ _ = []
+deepSelectKey _ _ = V.empty
 
 main :: IO ()
 main = do
@@ -20,6 +20,6 @@ main = do
   obj <- maybe (fail "JSON decoding") return . decode' =<< L.getContents
   case args of
     [key] ->
-      L8.putStrLn . encode . Array . V.fromList $ deepSelectKey (T.pack key) obj
+      L8.putStrLn . encode . Array $ deepSelectKey (T.pack key) obj
     _ -> error "Usage: json-deep-select-key <key>"
 
