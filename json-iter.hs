@@ -2,16 +2,17 @@ import System.Environment (getArgs)
 import System.IO (hPutStrLn, stderr)
 import System.Exit (exitFailure)
 import Control.Monad (when)
-import Text.JSON.AttoJSON
+import Data.Aeson
 import Utils (parseJSONFiles, systemWithStdin)
+import qualified Data.Vector as V
 
-unSequence :: JSValue -> [JSValue]
-unSequence (JSArray a) = a
-unSequence _           = error "unSequence: a JSON sequence was expected"
+unSequence :: Value -> [Value]
+unSequence (Array a) = V.toList a
+unSequence _         = error "unSequence: a JSON sequence was expected"
 
 iterJSON :: String -> [String] -> IO ()
 iterJSON cmd jsonfiles =
-  mapM_ (mapM_ (systemWithStdin cmd . showJSON) . unSequence)
+  mapM_ (mapM_ (systemWithStdin cmd . encode) . unSequence)
     =<< parseJSONFiles jsonfiles
 
 usage :: IO a
