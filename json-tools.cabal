@@ -35,7 +35,7 @@ executable json-iter
 
 executable json-lines
     main-is: json-lines.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring
+    Build-depends: base>=3&&<5, aeson, bytestring
     Other-modules: Utils
     ghc-options: -Wall -Odph
 
