@@ -1,22 +1,26 @@
-import Text.JSON.AttoJSON
-import qualified Data.ByteString as S
+import Data.Aeson
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Monoid
+import Data.Maybe
 import Data.Foldable hiding (mapM_)
 import Control.Monad (when)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
+import qualified Data.Text as T
+import qualified Data.Vector as V
 
 -- NOTE that the map keys are not included
 
-jsonStrings :: JSValue -> [S.ByteString]
+jsonStrings :: Value -> [T.Text]
 jsonStrings x0 = appEndo (go x0) []
-  where go (JSString s) = Endo (s:)
-        go (JSNumber _) = mempty
-        go (JSBool   _) = mempty
-        go JSNull       = mempty
-        go (JSObject m) = foldMap go m
-        go (JSArray xs) = foldMap go xs
+  where go (String s) = Endo (s:)
+        go (Number _) = mempty
+        go (Bool   _) = mempty
+        go Null       = mempty
+        go (Object m) = foldMap go m
+        go (Array xs) = foldMap go xs
 
 usage :: IO a
 usage = mapM_ (hPutStrLn stderr)
@@ -30,9 +34,10 @@ main :: IO ()
 main = do
   args <- getArgs
   when (not . null $ args) usage
-  S.putStrLn . showJSON             -- printing the output
-     . JSArray . map JSString       -- building the result
+  L8.putStrLn . encode              -- printing the output
+     . Array . V.fromList           -- building the result
+     . map String                   -- building the elements
      . jsonStrings                  -- main processing
-     . either err id                -- error handling
-     . parseJSON =<< S.getContents  -- reading the input
-  where err = error . ("JSON parsing: "++)
+     . fromMaybe err                -- error handling
+     . decode' =<< L.getContents    -- reading the input
+  where err = error "JSON parsing"
