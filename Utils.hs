@@ -4,7 +4,8 @@ module Utils
   , systemWithStdin)
 where
 
-import Text.JSON.AttoJSON
+import Data.Aeson
+import Data.Maybe
 import Data.Functor
 import Control.Exception
 import qualified Data.ByteString as S
@@ -28,15 +29,15 @@ readFilesS args
   where file "-" = S.getContents
         file xs  = S.readFile xs
 
-decodeFile :: FilePath -> IO (Either String JSValue)
-decodeFile fp = parseJSON <$> S.readFile fp
+decodeFile :: FilePath -> IO (Maybe Value)
+decodeFile fp = decode' <$> L.readFile fp
 
-decErr :: String -> a
-decErr s = error $ "JSON decoding: " ++ s
+decErr :: a
+decErr = error "JSON decoding"
 
-parseJSONFiles :: [FilePath] -> IO [JSValue]
-parseJSONFiles [] = (:[]) . either decErr id . parseJSON <$> S.getContents
-parseJSONFiles xs = mapM (unsafeInterleaveIO . fmap (either decErr id) . decodeFile) xs
+parseJSONFiles :: [FilePath] -> IO [Value]
+parseJSONFiles [] = (:[]) . fromMaybe decErr . decode' <$> L.getContents
+parseJSONFiles xs = mapM (unsafeInterleaveIO . fmap (fromMaybe decErr) . decodeFile) xs
 
 systemWithStdin :: String -> S.ByteString -> IO ExitCode
 systemWithStdin shellCmd input = do
