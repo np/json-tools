@@ -1,0 +1,4 @@
+,"Array":  [[], [""], [1, 2]]
+,"String": "here is it"
+,"Number": 42.01
+,"Bool":   {"true": true, "false": false}}

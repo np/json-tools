@@ -1,0 +1,132 @@
+#!/bin/bash
+
+testname=json-select5.t
+command=json-select
+args=( -m /\"Bool\"/\* )
+exit_code=0
+stdin_file=stdin
+stdout_file=stdout
+stderr_file=/dev/null
+sources=( )
+products=( )
+
+# Environment variables:
+env_vars=( MAILADDR XDG_VTNR PACKAGER FULLNAME SSH_AGENT_PID HABSCHROOTDIR XDG_SESSION_ID XDG_DATA_HOME GPG_AGENT_INFO SHELL TERM XDG_SESSION_COOKIE CURL_CA_BUNDLE WINDOWID GPGFPR GTK_MODULES LC_ALL EVENTS_LOG LC_CTYP USER LS_COLORS MPD_HOST LIBGL_DRIVERS_PATH SUDO_PROMPT SSH_AUTH_SOCK PKGDEST DTACH_TPUT_HACK PAGER SCREENDIR MOZ_PLUGIN_PATH XDG_CONFIG_DIRS MONKEYSPHERE_VALIDATION_AGENT_SOCKET RXVT_SOCKET FULLEMAIL PATH MAIL QT_IM_MODULE DARCS_DONT_ESCAPE_8BIT HG LC_COLLATE GPG_ID BLOCK_SIZE PWD DTACH_DETACH_KEY DTACH_REDRAW_METHOD JAVA_HOME EDITOR USBDEV LANG DARCS_PAGER DITZ_ROOT DTACH_DISABLE_SUSPEND_KEY MANPAGER REALNAME COLORFGBG ARCH_HASKELL HOME XDG_SEAT SHLVL LANGUAGE TERMINFO XDG_CONFIG_HOME GREP_OPTIONS DARCS_ALWAYS_COLOR XDG_CACHE_HOME LESS LOGNAME CVS_RSH DARCS_EDITOR LC_CTYPE DBUS_SESSION_BUS_ADDRESS J2SDKDIR XDG_DATA_DIRS EMAIL BROWSER VTERM REPORTTIME CVSEDITOR WINDOWPATH DISPLAY XDG_RUNTIME_DIR GTK_IM_MODULE J2REDIR DARCS_DO_COLOR_LINES DARCS_EMAIL DOTREMINDERS G_BROKEN_FILENAMES COLORTERM XAUTHORITY _ )
+env_var_MAILADDR=nicolas.pouillard@gmail.com
+env_var_XDG_VTNR=1
+env_var_PACKAGER=Nicolas\ Pouillard\ \<nicolas.pouillard@gmail.com\>
+env_var_FULLNAME=Nicolas\ Pouillard
+env_var_SSH_AGENT_PID=597
+env_var_HABSCHROOTDIR=/home/np/w/archhaskell/habs
+env_var_XDG_SESSION_ID=1
+env_var_XDG_DATA_HOME=/home/np/private
+env_var_GPG_AGENT_INFO=/tmp/gpg-DZ2EQm/S.gpg-agent:622:1
+env_var_SHELL=/bin/zsh
+env_var_TERM=rxvt-unicode-256color
+env_var_XDG_SESSION_COOKIE=db2b045dccc2c4c1091faa5349184e31-1348159906.470468-1405336199
+env_var_CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+env_var_WINDOWID=37748742
+env_var_GPGFPR=326BFF50785562A4AC8855CF8826FA5657EF6CA0
+env_var_GTK_MODULES=canberra-gtk-module
+env_var_LC_ALL=en_US.UTF-8
+env_var_EVENTS_LOG=/home/np/.xmonad/events.log
+env_var_LC_CTYP=en_US.UTF-8
+env_var_USER=np
+env_var_LS_COLORS=no=00:fi=00:di=0\;33:ln=01\;36:pi=40\;33:so=01\;35:bd=40\;33\;01:cd=40\;33\;01:or=40\;31\;01:ex=01\;32:\*.tar=01\;31:\*.tgz=01\;31:\*.arj=01\;31:\*.taz=01\;31:\*.lzh=01\;31:\*.zip=01\;31:\*.z=01\;31:\*.Z=01\;31:\*.gz=01\;31:\*.xz=01\;31:\*.bz2=01\;31:\*.deb=01\;31:\*.rpm=01\;31:\*.jpg=01\;35:\*.gif=01\;35:\*.bmp=01\;35:\*.pgm=01\;35:\*.pbm=01\;35:\*.ppm=01\;35:\*.tga=01\;35:\*.png=01\;35:\*.GIF=01\;35:\*.JPG=01\;35:\*.xbm=01\;35:\*.xpm=01\;35:\*.tif=01\;35:\*.mpg=01\;37:\*.avi=01\;37:\*.gl=01\;37:\*.dl=01\;37:\*.mly=01\;37:\*.mll=01\;37:\*.mli=01\;37:\*.ml=01\;37:\*.mla=01\;37:\*.cpp=01\;37:\*.cc=01\;37:\*.c=01\;37:\*.hh=01\;37:\*.h=01\;37:\*Makefile=4\;32:\*.pl=4\;32:\*.sh=4\;32:\*.ps=01\;34:\*.pdf=01\;34:\*TODO=01\;37:\*TOGO=01\;37:\*README=01\;37:\*LINKS=01\;37:\*.y=01\;37:\*.l=01\;37:\*.algo=01\;37
+env_var_MPD_HOST=/home/np/Music/mpd/socket
+env_var_LIBGL_DRIVERS_PATH=/usr/lib/xorg/modules/dri/:/usr/lib32/xorg/modules/dri:/usr/lib32/xorg/modules/dri
+env_var_SUDO_PROMPT=$'[NP:sudo] Password:\a'
+env_var_SSH_AUTH_SOCK=/tmp/ssh-Q2NmnkHxeZjr/agent.596
+env_var_PKGDEST=/home/np/.pkgdest
+env_var_DTACH_TPUT_HACK=1
+env_var_PAGER=less
+env_var_SCREENDIR=/home/np/tmp
+env_var_MOZ_PLUGIN_PATH=/usr/lib/mozilla/plugins
+env_var_XDG_CONFIG_DIRS=/etc/xdg:/etc/xdg
+env_var_MONKEYSPHERE_VALIDATION_AGENT_SOCKET=http://10.21.1.1:4998
+env_var_RXVT_SOCKET=/home/np/.urxvt-socket
+env_var_FULLEMAIL=Nicolas\ Pouillard\ \<nicolas.pouillard@gmail.com\>
+env_var_PATH=/home/np/bin:/home/np/tools:/home/np/tools/vendor/bin:/home/np/private/bin:/home/np/.cabal/bin:/opt/ruby1.8/bin:/usr/local/bin:/usr/local/sbin:/usr/lib/git-core:/sbin:/bin:/usr/bin:/usr/sbin:/usr/bin/vendor_perl:/usr/bin/core_perl
+env_var_MAIL=/var/spool/mail/np
+env_var_QT_IM_MODULE=xim
+env_var_DARCS_DONT_ESCAPE_8BIT=True
+env_var_HG=/usr/bin/hg
+env_var_LC_COLLATE=en_US.UTF-8
+env_var_GPG_ID=57EF6CA0
+env_var_BLOCK_SIZE=human-readable
+env_var_PWD=/home/np/w/json-tools/tests
+env_var_DTACH_DETACH_KEY=\^s
+env_var_DTACH_REDRAW_METHOD=ctrl_l
+env_var_JAVA_HOME=/usr/lib/jvm/java-6-openjdk
+env_var_EDITOR=vim
+env_var_USBDEV=no-usb-device
+env_var_LANG=en_US.UTF-8
+env_var_DARCS_PAGER=less
+env_var_DITZ_ROOT=/home/np/w/ditz
+env_var_DTACH_DISABLE_SUSPEND_KEY=1
+env_var_MANPAGER=less
+env_var_REALNAME=Nicolas\ Pouillard\ \<nicolas.pouillard@gmail.com\>
+env_var_COLORFGBG=0\;default\;8
+env_var_ARCH_HASKELL=Arch\ Haskell\ Team\ \<arch-haskell@haskell.org\>
+env_var_HOME=/home/np
+env_var_XDG_SEAT=seat0
+env_var_SHLVL=8
+env_var_LANGUAGE=en_US.UTF-8
+env_var_TERMINFO=/usr/share/terminfo
+env_var_XDG_CONFIG_HOME=/home/np/conf
+env_var_GREP_OPTIONS=--color=auto
+env_var_DARCS_ALWAYS_COLOR=True
+env_var_XDG_CACHE_HOME=/home/np/local/cache
+env_var_LESS=XFRf~
+env_var_LOGNAME=np
+env_var_CVS_RSH=ssh
+env_var_DARCS_EDITOR=vim
+env_var_LC_CTYPE=en_US.UTF-8
+env_var_DBUS_SESSION_BUS_ADDRESS=unix:abstract=/tmp/dbus-bT1XW5Jg3L\,guid=e6e4cf86264ce0704f16d570505b498e
+env_var_J2SDKDIR=/usr/lib/jvm/java-6-openjdk
+env_var_XDG_DATA_DIRS=/usr/local/share/:/usr/share/:/usr/local/share/:/usr/share/
+env_var_EMAIL=nicolas.pouillard@gmail.com
+env_var_BROWSER=/home/np/tools/browser
+env_var_VTERM=urxvt\ -name\ LURxvt
+env_var_REPORTTIME=5
+env_var_CVSEDITOR=vim
+env_var_WINDOWPATH=7
+env_var_DISPLAY=:0
+env_var_XDG_RUNTIME_DIR=/run/user/1042
+env_var_GTK_IM_MODULE=xim
+env_var_J2REDIR=/usr/lib/jvm/java-6-openjdk/jre
+env_var_DARCS_DO_COLOR_LINES=True
+env_var_DARCS_EMAIL=Nicolas\ Pouillard\ \<nicolas.pouillard@gmail.com\>
+env_var_DOTREMINDERS=/home/np/c/np/todo/reminders
+env_var_G_BROKEN_FILENAMES=1
+env_var_COLORTERM=rxvt-xpm
+env_var_XAUTHORITY=/home/np/.Xauthority
+env_var__=''
+
+setup(){
+  : Perform here actions to be run before the tested program
+}
+
+munge(){
+  : Munge here the results of the tested program to ease the check
+}
+
+check(){
+  check_exit_code &&
+  check_stderr &&
+  check_stdout &&
+  check_products &&
+  : Perform here extra checks on the tested program
+}
+
+explain(){
+  explain_exit_code
+  explain_stdout
+  explain_stderr
+  explain_products
+  : Explain here more potential differences
+}
+
+teardown(){
+  : Undo here the actions of setup
+}
