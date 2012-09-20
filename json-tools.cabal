@@ -24,7 +24,7 @@ executable json-deep-select-key
 
 executable json-select
     main-is: json-select.hs
-    Build-depends: base>=3&&<5, AttoJson, bytestring, containers
+    Build-depends: base>=3&&<5, aeson, bytestring, containers
     ghc-options: -Wall -Odph
 
 executable json-iter

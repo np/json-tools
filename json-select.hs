@@ -1,52 +1,54 @@
 import Data.List
 import Data.Monoid
-import qualified Data.Map as M
+import qualified Data.HashMap.Strict as HM
 import Control.Arrow
-import Text.JSON.AttoJSON
+import Data.Aeson
 import System.Environment (getArgs)
 import System.IO (stderr, hPutStrLn)
 import System.Exit
-import qualified Data.ByteString as S
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy.Char8 as L8
+import Data.Text (Text)
+import qualified Data.Vector as V
 
-type JSObject a = M.Map S.ByteString a
-
-data JSFrame = JSArrayFrm [JSValue] [JSValue]
-             | JSObjectFrm S.ByteString (JSObject JSValue)
+data Frame = ArrayFrm Array Array
+           | ObjectFrm Text Object
   deriving (Show)
 
-type JSContext = [JSFrame]
+type Context = [Frame]
 
-data JSSegment = JSArrayIndex Int
-               | JSObjectKey  S.ByteString
-type JSPath = [JSSegment]
+data Segment = ArrayIndex Int
+             | ObjectKey  Text
+type Path = [Segment]
 
-type JSMultiPath = [Maybe JSSegment] -- Nothing means '*'
+type MultiPath = [Maybe Segment] -- Nothing means '*'
 
-type JSCxtValue = (JSContext, JSValue)
+type CxtValue = (Context, Value)
 
-segmentFromFrame :: JSFrame -> JSSegment
-segmentFromFrame (JSArrayFrm prefix _) = JSArrayIndex (length prefix)
-segmentFromFrame (JSObjectFrm f _)     = JSObjectKey f
+segmentFromFrame :: Frame -> Segment
+segmentFromFrame (ArrayFrm prefix _) = ArrayIndex (V.length prefix)
+segmentFromFrame (ObjectFrm f _)     = ObjectKey f
 
-pathFromContext :: JSContext -> JSPath
+pathFromContext :: Context -> Path
 pathFromContext = map segmentFromFrame
 
-selectJSONSegment :: JSSegment -> JSValue -> Either String (JSFrame, JSValue)
-selectJSONSegment (JSArrayIndex ix) (JSArray vs)
-  = case splitAt ix vs of
-      (prefix, v : suffix) -> Right (JSArrayFrm prefix suffix, v)
-      (_, [])              -> Left msg
+selectJSONSegment :: Segment -> Value -> Either String (Frame, Value)
+selectJSONSegment (ArrayIndex ix) (Array vs)
+  = case V.splitAt ix vs of
+      (prefix, suffix)
+        | V.null suffix -> Left msg
+        | otherwise     -> Right (ArrayFrm prefix (V.tail suffix), V.head suffix)
   where msg = "An array with an index "++show ix++" was expected"
-selectJSONSegment (JSObjectKey   f) (JSObject o)
-  = maybe (Left msg) ok . M.lookup f $ o
+selectJSONSegment (ObjectKey f) (Object o)
+  = maybe (Left msg) ok . HM.lookup f $ o
   where msg   = "An object with a field "++show f++" was expected"
-        ok x  = Right (JSObjectFrm f (M.delete f o), x)
-selectJSONSegment (JSArrayIndex  _) _
+        ok x  = Right (ObjectFrm f (HM.delete f o), x)
+selectJSONSegment (ArrayIndex  _) _
   = Left "An array was expected"
-selectJSONSegment (JSObjectKey   _) _
+selectJSONSegment (ObjectKey   _) _
   = Left "An object was expected"
 
-selectJSON :: JSCxtValue -> JSPath -> (JSContext, Either String JSValue)
+selectJSON :: CxtValue -> Path -> (Context, Either String Value)
 selectJSON (cxt,val) [] = (cxt, Right val)
 selectJSON (cxt,val) (seg:path) =
   either ((,)cxt . Left) (flip selectJSON path . first (:cxt)) (selectJSONSegment seg val)
@@ -57,33 +59,34 @@ zips f (y : ys) = go [] y ys
   where go sx x []                = [f (reverse sx) x []]
         go sx x xs@(xs'x : xs'xs) = f (reverse sx) x xs : go (x : sx) xs'x xs'xs
 
-allSubValues :: JSCxtValue -> [JSCxtValue]
-allSubValues (_,   JSArray []) = []
-allSubValues (cxt, JSArray vs) = zips f vs
-  where f prefix value suffix = (JSArrayFrm prefix suffix : cxt, value)
-allSubValues (cxt, JSObject o) = map (first f) . M.toList $ o
-  where f key = JSObjectFrm key (M.delete key o) : cxt
+allSubValues :: CxtValue -> [CxtValue]
+allSubValues (cxt, Array vs)
+    | V.null vs = []
+    | otherwise = zips f (V.toList vs)
+  where f prefix value suffix = (ArrayFrm (V.fromList prefix) (V.fromList suffix) : cxt, value)
+allSubValues (cxt, Object o) = map (first f) . HM.toList $ o
+  where f key = ObjectFrm key (HM.delete key o) : cxt
 allSubValues _ = []
 
-selectJSONMaybeSegment :: Maybe JSSegment -> JSCxtValue -> [JSCxtValue]
+selectJSONMaybeSegment :: Maybe Segment -> CxtValue -> [CxtValue]
 selectJSONMaybeSegment (Just seg) (cxt,val) = either (const []) (return . first (:cxt)) $ selectJSONSegment seg val
 selectJSONMaybeSegment Nothing    cxtval = allSubValues cxtval
 
-selectMultiJSON :: JSCxtValue -> JSMultiPath -> [JSCxtValue]
+selectMultiJSON :: CxtValue -> MultiPath -> [CxtValue]
 selectMultiJSON cxtval []        = return cxtval
 selectMultiJSON cxtval (mp : ps) = selectJSONMaybeSegment mp cxtval >>= flip selectMultiJSON ps
 
 type Reader a = String -> (a, String)
 
-readJSSegment :: Reader JSSegment
+readJSSegment :: Reader Segment
 readJSSegment xs@('"':_) = case reads xs of -- TODO maybe we should use the JSON syntax for literal strings
-                             [r] -> first JSObjectKey r
+                             [r] -> first ObjectKey r
                              _   -> error "Parse error: malformed string (when reading path segment)"
 readJSSegment xs         = case reads xs of
-                             [r] -> first JSArrayIndex r
+                             [r] -> first ArrayIndex r
                              _   -> error "Parse error: malformed integer (when reading path segment)"
 
-readJSMultiSegment :: Reader (Maybe JSSegment)
+readJSMultiSegment :: Reader (Maybe Segment)
 readJSMultiSegment ('*':xs) = (Nothing, xs)
 readJSMultiSegment xs       = first Just . readJSSegment $ xs
 
@@ -93,18 +96,18 @@ readJSPathGen _ ['/']    = []
 readJSPathGen r ('/':xs) = let (seg, ys) = r xs in seg : readJSPathGen r ys
 readJSPathGen _ (x:_)    = error $ "Parse error: unexpected char "++show x++", '/' was expected"
 
-readJSPath :: String -> JSPath
+readJSPath :: String -> Path
 readJSPath = readJSPathGen readJSSegment
 
-readJSMultiPath :: String -> JSMultiPath
+readJSMultiPath :: String -> MultiPath
 readJSMultiPath = readJSPathGen readJSMultiSegment
 
-showJSPath :: JSPath -> ShowS
+showJSPath :: Path -> ShowS
 showJSPath = (('/':) .) . mconcat . intersperse ('/':) . map showJSSegment
 
-showJSSegment :: JSSegment -> ShowS
-showJSSegment (JSObjectKey f)   = shows f
-showJSSegment (JSArrayIndex ix) = shows ix
+showJSSegment :: Segment -> ShowS
+showJSSegment (ObjectKey f)   = shows f
+showJSSegment (ArrayIndex ix) = shows ix
 
 -- should already exists
 distrEitherPair :: (a, Either b c) -> Either (a, b) (a, c)
@@ -127,15 +130,15 @@ usage msg = mapM_ (hPutStrLn stderr)
 main :: IO ()
 main = do
   args <- getArgs
-  let pobj = either fail return . parseJSON =<< S.getContents
+  let pobj = maybe (fail "JSON decoding") return . decode' =<< L.getContents
   case args of
     [] -> usage "Too few arguments"
     ["-m", path] ->
       do obj <- pobj
-         S.putStrLn . showJSON . JSArray . map snd . selectMultiJSON ([], obj) . readJSMultiPath $ path
+         L8.putStrLn . encode . Array . V.fromList . map snd . selectMultiJSON ([], obj) . readJSMultiPath $ path
     [path] ->
       do obj <- pobj
-         either err (S.putStrLn . showJSON . snd) . distrEitherPair $ selectJSON ([], obj) (readJSPath path)
+         either err (L8.putStrLn . encode . snd) . distrEitherPair $ selectJSON ([], obj) (readJSPath path)
       where err (cxt, msg) = hPutStrLn stderr $ (showString msg . showString "\nLocation in the structure: " . showJSPath (pathFromContext cxt)) ""
     _ -> usage "Too many arguments"
 
