@@ -4,7 +4,7 @@ import Control.Monad (when)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn,stderr)
-import Utils (readFilesL)
+import Utils (readFiles)
 
 usage :: IO a
 usage = mapM_ (hPutStrLn stderr)
@@ -20,5 +20,5 @@ main = do
   args <- getArgs
   when ("--help"`elem`args) usage
   L.putStrLn . L.cons '[' . L.intercalate "\n," . L.lines . L.concat
-    =<< readFilesL args
+    =<< readFiles args
   L.putStrLn "]"

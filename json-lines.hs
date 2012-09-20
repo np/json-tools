@@ -5,7 +5,7 @@ import Control.Monad (when)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn,stderr)
-import Utils (readFilesL)
+import Utils (readFiles)
 import qualified Data.Vector as V
 
 jsonUnlines :: Value -> [Value]
@@ -33,5 +33,5 @@ main =
          jsonUnlines          -- main processing
          . maybe err id       -- error handling
          . decode'            -- parsing each file as JSON
-       ) =<< readFilesL args  -- reading the input
+       ) =<< readFiles args   -- reading the input
   where err = error "JSON decoding error"
