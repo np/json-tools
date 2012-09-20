@@ -62,7 +62,8 @@ executable json-xargs
 
 executable tar2json
     main-is: tar2json.hs
-    Build-depends: base>=3&&<5, bytestring, convertible-text, data-object, data-object-json, tar
+    Build-depends: base>=3&&<5, bytestring, aeson, unordered-containers,
+                   text, tar>=0.4.0
     ghc-options: -Wall -Odph
 
 source-repository head
