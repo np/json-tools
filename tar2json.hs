@@ -5,6 +5,8 @@ import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L
 import System.IO
 
+{-TODO currently does not work for binary files-}
+
 tar2json :: Tar.Entries FormatError -> Aeson.Value
 tar2json es0 = Aeson.Object $ HM.fromList [(k,v) | (k,Just v) <- entries es0] where
 
