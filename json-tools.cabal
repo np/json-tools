@@ -71,6 +71,11 @@ executable json-quote
     Build-depends: base>=3&&<5, aeson, text
     ghc-options: -Wall -Odph
 
+executable hjq
+    main-is: jq.hs
+    Build-depends: base>=3&&<5, aeson, text, attoparsec
+    ghc-options: -Wall -Odph
+
 source-repository head
     type:     git
     location: git://github.com/np/json-tools.git
