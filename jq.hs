@@ -26,39 +26,62 @@ type ValueBinOp = Value -> Value -> Value
 type Filter = [Value] -> [Value]
 type Obj = HashMap Text
 
-err2 :: Value -> Value -> String -> a
-err2 x y msg = error . unwords $ [show x, "and", show y, msg]
+data Type = TyNull | TyNumber | TyString | TyBool | TyArray | TyObject
+
+instance Show Type where
+  show TyNull = "null"
+  show TyNumber = "number"
+  show TyString = "string"
+  show TyBool = "boolean"
+  show TyArray = "array"
+  show TyObject = "object"
+
+typeOf :: Value -> Type
+typeOf Null     = TyNull
+typeOf Number{} = TyNumber
+typeOf String{} = TyString
+typeOf Bool{}   = TyBool
+typeOf Array{}  = TyArray
+typeOf Object{} = TyObject
+
+err :: [String] -> a
+err = error . unwords
+
+err2 :: Value -> Value -> (String -> String -> [String]) -> a
+err2 x y msg = err (msg (show (typeOf x)) (show (typeOf y)))
+
+err1 :: Value -> (String -> [String]) -> a
+err1 x msg = err (msg (show (typeOf x)))
 
 vecDiff :: Vector Value -> Vector Value -> Vector Value
 x `vecDiff` y = V.filter p x
   where p = not . (`S.member`s)
         s = S.fromList (V.toList y)
 
-(+|), (-|), (/|), ( *| ) :: ValueBinOp
+(+|), (-|), (/|), ( *| ), (%|) :: ValueBinOp
 
 Number x +| Number y = Number (x + y)
 String x +| String y = String (x <> y)
 Array  x +| Array  y = Array  (x <> y)
 Object x +| Object y = Object (y <> x) -- Right biased
-x        +| y        = err2 x y "cannot be added"
+x        +| y        = err2 x y $ \x y -> [x, "and", y, "cannot be added"]
 
 Number x -| Number y = Number (x - y)
 Array  x -| Array  y = Array (x `vecDiff` y)
-x        -| y        = err2 x y "cannot be subtracted"
+x        -| y        = err2 x y $ \x y -> [x, "and", y, "cannot be subtracted"]
 
 Number x *| Number y = Number (x * y)
-x        *| y        = err2 x y "cannot be multiplied"
+x        *| y        = err2 x y $ \x y -> [x, "and", y, "cannot be multiplied"]
 
 Number x /| Number y = Number (x / y)
-x        /| y        = err2 x y "cannot be divided"
+x        /| y        = err2 x y $ \x y -> [x, "and", y, "cannot be divided"]
 
 lengthFi :: Value -> Int
 lengthFi Null       = 0
 lengthFi (Array v)  = V.length v
 lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = B.length . encodeUtf8 $ s
-lengthFi (Number _) = error "number has no length"
-lengthFi (Bool _)   = error "boolean has no length"
+lengthFi x          = err1 x $ \x -> [x, "has no length"]
 
 lengthOp :: ValueOp
 lengthOp = toJSON . lengthFi
@@ -66,10 +89,7 @@ lengthOp = toJSON . lengthFi
 keysOp :: ValueOp
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
 keysOp (Object o) = toJSON $ H.keys o
-keysOp Number{}   = error "number has no keys"
-keysOp Null       = error "null has no keys"
-keysOp Bool{}     = error "boolean has no keys"
-keysOp String{}   = error "string has no keys"
+keysOp x          = err1 x $ \x -> [x, "has no keys"]
 
 at :: Value -> Value -> Maybe Value
 Object o `at` String s = H.lookup s o
@@ -187,7 +207,7 @@ filter (Ap2F op f g) = ap2F (valueBinOp op) (filter f) (filter g)
 filter EmptyF        = emptyF
 filter (OpF op)      = fmap (valueOp op)
 filter (ConstF v)    = constF v
-filter (ErrorF err)  = error err
+filter (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseTimesFilter, parseDivFilter,
   parseMinusFilter, parsePlusFilter, parseCommaFilter,
