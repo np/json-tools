@@ -89,13 +89,15 @@ lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = B.length . encodeUtf8 $ s
 lengthFi x          = err1 x $ \x -> [x, "has no length"]
 
-lengthOp :: ValueOp
+lengthOp, keysOp, addOp :: ValueOp
+
 lengthOp = toJSON . lengthFi
 
-keysOp :: ValueOp
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
 keysOp (Object o) = toJSON $ H.keys o
 keysOp x          = err1 x $ \x -> [x, "has no keys"]
+
+addOp = foldr (+|) Null . toList
 
 at :: Value -> Value -> Maybe Value
 Object o `at` String s = H.lookup s o
@@ -157,7 +159,7 @@ data F = IdF             -- .
        | ErrorF String
   deriving (Show)
 
-data Op = Length | Keys
+data Op = Length | Keys | Add
   deriving (Show)
 
 data BinOp = Plus | Minus | Times | Div | Mod
@@ -202,6 +204,7 @@ valueBinOp Mod   = (%|)
 valueOp :: Op -> ValueOp
 valueOp Keys   = keysOp
 valueOp Length = lengthOp
+valueOp Add    = addOp
 
 filter :: F -> Filter
 filter IdF           = id
@@ -242,8 +245,9 @@ parseConstFilter
  <|> pure (Object mempty) <* string "{}"
 
 parseOp :: Parser Op
-parseOp =  pure Length <* string "length"
-       <|> pure Keys   <* string "keys"
+parseOp =  Length    <$ string "length"
+       <|> Keys      <$ string "keys"
+       <|> Add       <$ string "add"
 
 tok :: Char -> Parser Char
 tok c = skipSpace *> char c
