@@ -78,6 +78,10 @@ x        *| y        = err2 x y $ \x y -> [x, "and", y, "cannot be multiplied"]
 Number x /| Number y = Number (x / y)
 x        /| y        = err2 x y $ \x y -> [x, "and", y, "cannot be divided"]
 
+-- Only integers so far
+Number (I x) %| Number (I y) = Number (I (x `mod` y))
+x            %| y            = err2 x y $ \x y -> [x, "and", y, "cannot be 'mod'ed"]
+
 lengthFi :: Value -> Int
 lengthFi Null       = 0
 lengthFi (Array v)  = V.length v
@@ -156,7 +160,7 @@ data F = IdF             -- .
 data Op = Length | Keys
   deriving (Show)
 
-data BinOp = Plus | Minus | Times | Div
+data BinOp = Plus | Minus | Times | Div | Mod
   deriving (Show)
 
 -- .key
@@ -174,7 +178,7 @@ binOpF _  [x]   = x
 binOpF op [x,y] = Ap2F op x y
 binOpF _  _     = error "binOpF: not supported yet"
 
-concatF, composeF, sumF, productF, minusF, divF :: [F] -> F
+concatF, composeF, sumF, productF, minusF, divF, modF :: [F] -> F
 
 concatF [] = IdF
 concatF xs = foldr1 BothF xs
@@ -186,12 +190,14 @@ sumF     = binOpF Plus
 productF = binOpF Times
 minusF   = binOpF Minus
 divF     = binOpF Div
+modF     = binOpF Mod
 
 valueBinOp :: BinOp -> ValueBinOp
 valueBinOp Plus  = (+|)
 valueBinOp Times = (*|)
 valueBinOp Minus = (-|)
 valueBinOp Div   = (/|)
+valueBinOp Mod   = (%|)
 
 valueOp :: Op -> ValueOp
 valueOp Keys   = keysOp
@@ -212,6 +218,7 @@ filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseTimesFilter, parseDivFilter,
+  parseModFilter,
   parseMinusFilter, parsePlusFilter, parseCommaFilter,
   parseNoCommaFilter, parseFilter, parseDotFilter :: Parser F
 
@@ -257,7 +264,9 @@ parseTimesFilter = productF <$> parseSimpleFilter `sepBy` (tok '*')
 
 parseDivFilter = divF <$> parseTimesFilter `sepBy` (tok '/')
 
-parsePlusFilter = sumF <$> parseDivFilter `sepBy` (tok '+')
+parseModFilter = modF <$> parseDivFilter `sepBy` (tok '%')
+
+parsePlusFilter = sumF <$> parseModFilter `sepBy` (tok '+')
 
 parseMinusFilter = minusF <$> parsePlusFilter `sepBy` (tok '-')
 
