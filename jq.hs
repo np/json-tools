@@ -3,6 +3,7 @@ import Control.Applicative as A
 import Prelude hiding (filter)
 import Data.Maybe
 import Data.Char
+import Data.List ((\\))
 import Data.Monoid
 import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
@@ -313,8 +314,13 @@ stream :: Parser [Value]
 stream = value `sepBy` skipSpace
 
 main :: IO ()
-main = do [arg] <- getArgs
+main = do args <- getArgs
+          let noinput = "-n" `elem` args
+              [arg] = args \\ ["-n"]
           let Just f = parse (parseFilter <* skipSpace) (L8.pack arg)
           -- print f
-          input <- maybe (fail "JSON decoding") return . parse (stream <* skipSpace) =<< L.getContents
+          input <- if noinput then
+                     return [Null]
+                   else
+                     maybe (fail "JSON decoding") return . parse (stream <* skipSpace) =<< L.getContents
           mapM_ (L8.putStrLn . encode) $ filter f input
