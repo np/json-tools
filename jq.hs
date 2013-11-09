@@ -67,28 +67,28 @@ Number x +| Number y = Number (x + y)
 String x +| String y = String (x <> y)
 Array  x +| Array  y = Array  (x <> y)
 Object x +| Object y = Object (y <> x) -- Right biased
-x        +| y        = err2 x y $ \x y -> [x, "and", y, "cannot be added"]
+x        +| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be added"]
 
 Number x -| Number y = Number (x - y)
 Array  x -| Array  y = Array (x `vecDiff` y)
-x        -| y        = err2 x y $ \x y -> [x, "and", y, "cannot be subtracted"]
+x        -| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be subtracted"]
 
 Number x *| Number y = Number (x * y)
-x        *| y        = err2 x y $ \x y -> [x, "and", y, "cannot be multiplied"]
+x        *| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be multiplied"]
 
 Number x /| Number y = Number (x / y)
-x        /| y        = err2 x y $ \x y -> [x, "and", y, "cannot be divided"]
+x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 
 -- Only integers so far
 Number (I x) %| Number (I y) = Number (I (x `mod` y))
-x            %| y            = err2 x y $ \x y -> [x, "and", y, "cannot be 'mod'ed"]
+x            %| y            = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
 
 lengthFi :: Value -> Int
 lengthFi Null       = 0
 lengthFi (Array v)  = V.length v
 lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = B.length . encodeUtf8 $ s
-lengthFi x          = err1 x $ \x -> [x, "has no length"]
+lengthFi x          = err1 x $ \x' -> [x', "has no length"]
 
 lengthOp, keysOp, addOp, transposeOp :: ValueOp
 
@@ -96,7 +96,7 @@ lengthOp = toJSON . lengthFi
 
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
 keysOp (Object o) = toJSON $ H.keys o
-keysOp x          = err1 x $ \x -> [x, "has no keys"]
+keysOp x          = err1 x $ \x' -> [x', "has no keys"]
 
 addOp = foldr (+|) Null . toList
 transposeOp (Array v) = Array . V.fromList
@@ -117,7 +117,7 @@ atF key = fmap (fromMaybe Null . (`at` key))
 toList :: Value -> [Value]
 toList (Array v)  = V.toList v
 toList (Object o) = H.elems o
-toList x          = err1 x $ \x -> ["Cannot iterate over", x]
+toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
 
 allF :: Filter
 allF xs = [ y | x <- xs, y <- toList x ]
