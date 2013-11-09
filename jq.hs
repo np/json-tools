@@ -3,7 +3,7 @@ import Control.Applicative as A
 import Prelude hiding (filter)
 import Data.Maybe
 import Data.Char
-import Data.List ((\\))
+import Data.List (transpose, (\\))
 import Data.Monoid
 import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
@@ -90,7 +90,7 @@ lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = B.length . encodeUtf8 $ s
 lengthFi x          = err1 x $ \x -> [x, "has no length"]
 
-lengthOp, keysOp, addOp :: ValueOp
+lengthOp, keysOp, addOp, transposeOp :: ValueOp
 
 lengthOp = toJSON . lengthFi
 
@@ -99,6 +99,11 @@ keysOp (Object o) = toJSON $ H.keys o
 keysOp x          = err1 x $ \x -> [x, "has no keys"]
 
 addOp = foldr (+|) Null . toList
+transposeOp (Array v) = Array . V.fromList
+                              . map (Array . V.fromList)
+                              . transpose
+                              $ [ V.toList w | Array w <- V.toList v ]
+transposeOp x         = err1 x $ \x' -> [x', "cannot be transposed"]
 
 at :: Value -> Value -> Maybe Value
 Object o `at` String s = H.lookup s o
@@ -165,7 +170,7 @@ data F = IdF             -- .
        | ErrorF String
   deriving (Show)
 
-data Op = Length | Keys | Add
+data Op = Length | Keys | Add | Transpose
   deriving (Show)
 
 data BinOp = Plus | Minus | Times | Div | Mod
@@ -211,6 +216,7 @@ valueOp :: Op -> ValueOp
 valueOp Keys   = keysOp
 valueOp Length = lengthOp
 valueOp Add    = addOp
+valueOp Transpose = transposeOp
 
 filter :: F -> Filter
 filter IdF           = id
@@ -254,6 +260,7 @@ parseOp :: Parser Op
 parseOp =  Length    <$ string "length"
        <|> Keys      <$ string "keys"
        <|> Add       <$ string "add"
+       <|> Transpose <$ string "transpose"
 
 tok :: Char -> Parser Char
 tok c = skipSpace *> char c
@@ -264,6 +271,7 @@ parseSimpleFilter
  <|> EmptyF <$ string "empty"
  <|> OpF <$> parseOp
  <|> mapF <$> (string "map" *> tok '(' *> parseFilter <* tok ')')
+ <|> Zip2F <$> (string "zip" *> tok '(' *> parseBinOp <* tok ')')
  <|> ConstF <$> parseConstFilter
  <|> ArrayF <$> (char '[' *> parseFilter <* tok ']')
  <|> ObjectF <$> obj parseNoCommaFilter
