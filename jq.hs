@@ -60,6 +60,8 @@ x `vecDiff` y = V.filter p x
 
 (+|), (-|), (/|), ( *| ), (%|) :: ValueBinOp
 
+Null     +| x        = x
+x        +| Null     = x
 Number x +| Number y = Number (x + y)
 String x +| String y = String (x <> y)
 Array  x +| Array  y = Array  (x <> y)
