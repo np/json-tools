@@ -108,8 +108,13 @@ _        `at` _ = Nothing
 atF :: Value -> Filter
 atF key = fmap (fromMaybe Null . (`at` key))
 
+toList :: Value -> [Value]
+toList (Array v)  = V.toList v
+toList (Object o) = H.elems o
+toList x          = err1 x $ \x -> ["Cannot iterate over", x]
+
 allF :: Filter
-allF xs = [ y | Array ys <- xs, y <- V.toList ys ]
+allF xs = [ y | x <- xs, y <- toList x ]
 
 bothF :: Filter -> Filter -> Filter
 bothF f g xs = f xs ++ g xs
