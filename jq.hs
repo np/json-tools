@@ -226,7 +226,7 @@ parseSimpleFilter, parseTimesFilter, parseDivFilter,
   parseNoCommaFilter, parseFilter, parseDotFilter :: Parser F
 
 parseDotFilter
-  =  pure AllF <* string "[]"
+  =  AllF <$ string "[]"
  <|> AtF <$> (char '[' *> value <* tok ']')
  <|> keyF <$> bareWord
  <|> pure IdF
@@ -238,11 +238,11 @@ parseConstFilter :: Parser Value
 parseConstFilter
   =  String <$> jstring
  <|> Number <$> number
- <|> pure (Bool True)     <* string "true"
- <|> pure (Bool False)    <* string "false"
- <|> pure Null            <* string "null"
- <|> pure (Array mempty)  <* string "[]"
- <|> pure (Object mempty) <* string "{}"
+ <|> (Bool True)     <$ string "true"
+ <|> (Bool False)    <$ string "false"
+ <|> Null            <$ string "null"
+ <|> (Array mempty)  <$ string "[]"
+ <|> (Object mempty) <$ string "{}"
 
 parseOp :: Parser Op
 parseOp =  Length    <$ string "length"
@@ -255,7 +255,7 @@ tok c = skipSpace *> char c
 parseSimpleFilter
   = skipSpace *>
   (  char '.' *> skipSpace *> parseDotFilter
- <|> string "empty" *> pure EmptyF
+ <|> EmptyF <$ string "empty"
  <|> OpF <$> parseOp
  <|> mapF <$> (string "map" *> tok '(' *> parseFilter <* tok ')')
  <|> ConstF <$> parseConstFilter
