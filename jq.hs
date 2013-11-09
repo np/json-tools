@@ -236,13 +236,13 @@ bareWord = T.pack <$> some (satisfy (\c -> isAscii c && isAlpha c))
 
 parseConstFilter :: Parser Value
 parseConstFilter
-  =  String <$> jstring
- <|> Number <$> number
- <|> (Bool True)     <$ string "true"
- <|> (Bool False)    <$ string "false"
- <|> Null            <$ string "null"
- <|> (Array mempty)  <$ string "[]"
- <|> (Object mempty) <$ string "{}"
+  =  String        <$> jstring
+ <|> Number        <$> number
+ <|> Bool True     <$  string "true"
+ <|> Bool False    <$  string "false"
+ <|> Null          <$  string "null"
+ <|> Array mempty  <$  string "[]"
+ <|> Object mempty <$  string "{}"
 
 parseOp :: Parser Op
 parseOp =  Length    <$ string "length"
@@ -264,21 +264,23 @@ parseSimpleFilter
  <|> char '(' *> parseFilter <* tok ')'
   )
 
-parseTimesFilter = productF <$> parseSimpleFilter `sepBy` (tok '*')
+-- TODO fix priorities
 
-parseDivFilter = divF <$> parseTimesFilter `sepBy` (tok '/')
+parseTimesFilter = productF <$> parseSimpleFilter `sepBy` tok '*'
 
-parseModFilter = modF <$> parseDivFilter `sepBy` (tok '%')
+parseDivFilter = divF <$> parseTimesFilter `sepBy` tok '/'
 
-parsePlusFilter = sumF <$> parseModFilter `sepBy` (tok '+')
+parseModFilter = modF <$> parseDivFilter `sepBy` tok '%'
 
-parseMinusFilter = minusF <$> parsePlusFilter `sepBy` (tok '-')
+parsePlusFilter = sumF <$> parseModFilter `sepBy` tok '+'
 
-parseCommaFilter = concatF <$> parseMinusFilter `sepBy` (tok ',')
+parseMinusFilter = minusF <$> parsePlusFilter `sepBy` tok '-'
 
-parseNoCommaFilter = composeF <$> parseMinusFilter `sepBy` (tok '|')
+parseCommaFilter = concatF <$> parseMinusFilter `sepBy` tok ','
 
-parseFilter = composeF <$> parseCommaFilter `sepBy1` (tok '|')
+parseNoCommaFilter = composeF <$> parseMinusFilter `sepBy` tok '|'
+
+parseFilter = composeF <$> parseCommaFilter `sepBy1` tok '|'
 
 obj :: Parser a -> Parser (Obj a)
 obj p = char '{' *> objectValues (skipSpace *> (bareWord <|> jstring)) p
