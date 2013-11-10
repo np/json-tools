@@ -1,6 +1,7 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings #-}
 import Control.Applicative as A
 import Control.Arrow (first,(***))
+import Control.Monad ((<=<))
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
@@ -446,32 +447,81 @@ objectFilterP = Obj
              <|> fill <$> bareWord
 
 parseF :: String -> F
-parseF = parsePure "filter" parseTopFilter . L8.pack
+parseF = either error id . parseM "filter" parseTopFilter . L8.pack
 
-parsePure :: String -> Parser a -> L.ByteString -> a
-parsePure msg p s =
-  case L.parse p s of
-    L.Done _ r -> r
-    L.Fail _ ctx msg' -> error (msg <> ": " <> msg' <> " context:" <> show ctx)
+parseM :: String -> Parser a -> L.ByteString -> Either String a
+parseM msg p s =
+    case L.parse p s of
+      L.Done _ r -> Right r
+      L.Fail _ ctx msg' -> Left (msg <> ": " <> msg' <> " context:" <> show ctx)
 
 parseIO :: String -> Parser a -> L.ByteString -> IO a
-parseIO msg p s =
-    case L.parse p s of
-      L.Done _ r -> return r
-      L.Fail _ ctx msg' -> fail (msg <> ": " <> msg' <> " context:" <> show ctx)
+parseIO msg p s = either fail return $ parseM msg p s
 
 stream :: Parser [Value]
 stream = (value `sepBy` skipSpace) <* skipSpace <* endOfInput
 
+readInput :: Bool -> IO [Value]
+readInput True = return [Null]
+readInput _    = parseIO "JSON decoding" stream =<< L.getContents
+
+mainFilter :: Bool -> String -> IO ()
+mainFilter noinput arg = do
+  f <- parseIO "parsing filter" parseTopFilter (L8.pack arg)
+  -- print f
+  input <- readInput noinput
+  mapM_ (L8.putStrLn . encode) $ filter f input
+
+type TestCase = (L.ByteString,L.ByteString,[L.ByteString])
+
+parseTestCase :: TestCase -> Either String (F,Value,Value)
+parseTestCase (prg,inp,out) =
+   (,,) <$> parseM "test program" parseTopFilter prg
+        <*> parseValue "test input"  inp
+        <*> parseValue "test output" (L8.unwords out)
+  where parseValue msg = parseM msg (value <* skipSpace <* endOfInput)
+
+
+runTest :: Either String (F, Value, Value) -> IO ()
+runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
+runTest (Right test@(f, input, output))
+   | filter f [input] == [output] = {-print test >>-} putStrLn (color 32 "PASS\n")
+   | otherwise                    = putStrLn (color 31 "FAIL\n")
+
+color :: Int -> String -> String
+color n = ("\^[["++) . shows n . ('m':) . (++ "\^[[m")
+
+printTestCase :: TestCase -> IO TestCase
+printTestCase t@(x,y,zs) = mapM_ L8.putStrLn (x:y:zs) >> return t
+
+runTests :: IO ()
+runTests = mapM_ (runTest . parseTestCase <=< printTestCase)
+         . fmap splitTestCase
+         . splitOnEmptyLines
+         . fmap dropComment
+         . L8.lines
+       =<< L.getContents
+
+splitTestCase :: [a] -> (a,a,[a])
+splitTestCase (x:y:zs) = (x,y,zs)
+splitTestCase _        = error "splitTestCase: too few lines for a test case"
+
+splitOnEmptyLines :: [L.ByteString] -> [[L.ByteString]]
+splitOnEmptyLines []  = []
+splitOnEmptyLines xss =
+  case span (not . L.null) (dropWhile L.null xss) of
+    (yss,zss) -> yss : splitOnEmptyLines zss
+
+dropComment :: L.ByteString -> L.ByteString
+dropComment s
+  | "#" `L.isPrefixOf` s = L.empty
+  | otherwise            = s
+
 main :: IO ()
 main = do args <- getArgs
-          let noinput = "-n" `elem` args
-          -- -c is ignored
-              [arg] = args \\ ["-n","-c"]
-          f <- parseIO "parsing filter" parseTopFilter (L8.pack arg)
-          -- print f
-          input <- if noinput then
-                     return [Null]
-                   else
-                     parseIO "JSON decoding" stream =<< L.getContents
-          mapM_ (L8.putStrLn . encode) $ filter f input
+          if "--run-tests" `elem` args then
+            runTests
+            else do
+              -- -c is ignored
+              let [arg] = args \\ ["-n","-c","--run-tests"]
+              mainFilter ("-n" `elem` args) arg
