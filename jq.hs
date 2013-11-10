@@ -168,6 +168,7 @@ data F = IdF             -- .
        | EmptyF          -- empty
        | OpF Op          -- length, keys
        | Ap2F BinOp F F  -- f + g, f - g, f / g, f * g
+       | SelectF F       -- select(f)
        | ConstF Value    -- 1, "foo", null
        | ErrorF String
   deriving (Show)
@@ -185,6 +186,14 @@ keyF = AtF . String
 -- def map(f): [.[] | f];
 mapF :: F -> F
 mapF f = ArrayF (AllF `CompF` f)
+
+trueValue :: Value -> Bool
+trueValue (Bool b) = b
+trueValue Null     = False
+trueValue _        = True
+
+selectF :: Filter -> Filter
+selectF f xs = [ x | x <- xs, any trueValue (f [x]) ]
 
 -- TODO: deal properly with "f + g - h" and "f - g + h"
 binOpF :: BinOp -> [F] -> F
@@ -231,6 +240,7 @@ filter (ObjectF o)   = objectF (fmap filter o)
 filter (Ap2F op f g) = ap2F (valueBinOp op) (filter f) (filter g)
 filter EmptyF        = emptyF
 filter (OpF op)      = fmap (valueOp op)
+filter (SelectF f)   = selectF (filter f)
 filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
@@ -272,6 +282,7 @@ parseSimpleFilter
   (  char '.' *> skipSpace *> parseDotFilter
  <|> EmptyF <$ string "empty"
  <|> OpF <$> parseOp
+ <|> SelectF <$> (string "select" *> tok '(' *> parseFilter <* tok ')')
  <|> mapF <$> (string "map" *> tok '(' *> parseFilter <* tok ')')
  <|> ConstF <$> parseConstFilter
  <|> ArrayF <$> (char '[' *> parseFilter <* tok ']')
