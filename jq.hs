@@ -26,8 +26,13 @@ import System.Environment
 type ValueOp = Value -> Value
 type ValueBinOp = Value -> Value -> Value
 type BoolBinOp = Value -> Value -> Bool
+type Filter1 = Value -> [Value]
 type Filter = [Value] -> [Value]
 type Obj = HashMap Text
+
+lift :: Filter1 -> Filter
+lift = concatMap
+-- lift f xs = [ r | x <- xs, r <- f x ]
 
 data Type = TyNull | TyNumber | TyString | TyBool | TyArray | TyObject
 
@@ -141,7 +146,7 @@ toList (Object o) = H.elems o
 toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
 
 allF :: Filter
-allF xs = [ y | x <- xs, y <- toList x ]
+allF = lift toList
 
 bothF :: Filter -> Filter -> Filter
 bothF f g xs = f xs ++ g xs
