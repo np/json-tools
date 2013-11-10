@@ -437,7 +437,7 @@ objectFilterP = Obj
                  ((pair <* skipSpace) `sepBy` (char ',' *> skipSpace))
                <* char '}')
    where fill k = (keyF k , atKeyF k)
-         keyFilterP =  ConstF . String <$> bareWord
+         keyFilterP =  ConstF . String <$> (bareWord <|> jstring)
                    <|> char '(' *> parseFilter <* tok ')'
                    <?> "key filter"
          pair =  (,)  <$> (keyFilterP <* skipSpace) <*> (char ':' *> skipSpace *> parseNoCommaFilter)
