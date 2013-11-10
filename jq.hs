@@ -348,7 +348,8 @@ stream = value `sepBy` skipSpace
 main :: IO ()
 main = do args <- getArgs
           let noinput = "-n" `elem` args
-              [arg] = args \\ ["-n"]
+          -- -c is ignored
+              [arg] = args \\ ["-n","-c"]
           let Just f = parse (parseFilter <* skipSpace) (L8.pack arg)
           -- print f
           input <- if noinput then
