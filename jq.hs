@@ -170,7 +170,7 @@ bothF :: Filter -> Filter -> Filter
 bothF f g = lift (bothF1 f g)
 
 arrayF :: Filter -> Filter
-arrayF f xs = [Array (V.fromList . f $ xs)]
+arrayF f xs = [Array (V.fromList $ f [x]) | x <- xs]
 
 dist :: Obj [Value] -> [Obj Value]
 dist = sequence
