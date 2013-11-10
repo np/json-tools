@@ -1,5 +1,6 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings #-}
 import Control.Applicative as A
+import Control.Arrow (first,(***))
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
@@ -22,7 +23,8 @@ import Data.Attoparsec.Char8 hiding (Result, parse)
 import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
-import Data.Traversable (sequence)
+import Data.Traversable (Traversable(..),foldMapDefault)
+import Data.Foldable (Foldable(foldMap))
 
 type ValueOp1 = Value -> Value
 type ValueOp2 = Value -> Value -> Value
@@ -30,7 +32,19 @@ type ValueOp3 = Value -> Value -> Value -> Value
 type BoolOp2 = Value -> Value -> Bool
 type Filter1 = Value -> [Value]
 type Filter = [Value] -> [Value]
-type Obj = HashMap Text
+
+newtype Obj a = Obj { unObj :: [(a,a)] }
+  deriving (Eq, Show)
+
+instance Functor Obj where
+  fmap f = Obj . fmap (f *** f) . unObj
+
+instance Traversable Obj where
+  traverse f (Obj o) = Obj <$> traverse trPair o
+    where trPair (x,y) = (,) <$> f x <*> f y
+
+instance Foldable Obj where
+  foldMap = foldMapDefault
 
 lift :: Filter1 -> Filter
 lift = concatMap
@@ -93,7 +107,7 @@ x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 Number (I x) %| Number (I y) = Number (I (x `mod` y))
 x            %| y            = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
 
-newtype NObj a = NObj (Obj a)
+newtype NObj a = NObj (HashMap Text a)
   deriving (Eq)
 instance Ord a => Ord (NObj a) where
   x <= y | x == y = True
@@ -175,8 +189,12 @@ arrayF f xs = [Array (V.fromList $ f [x]) | x <- xs]
 dist :: Obj [Value] -> [Obj Value]
 dist = sequence
 
+asObjectKey :: Value -> Text
+asObjectKey (String x) = x
+asObjectKey x          = err1 x $ \x' -> ["Cannot use", x', "as object key"]
+
 objectF1 :: Obj Filter -> Filter1
-objectF1 o x = fmap Object . dist . fmap (($[x])) $ o
+objectF1 o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($[x]) $ o
 
 objectF :: Obj Filter -> Filter
 objectF = lift . objectF1
@@ -223,7 +241,7 @@ data F = IdF             -- .
        | ErrorF String
   deriving (Show)
 
-data Op1 = Length | Keys | Add | Type | Min | Max
+data Op1 = Length | Keys | Add | Type | Min | Max | ToEntries
   deriving (Show)
 
 data Op2 = At | Has | Select | Contains
@@ -232,9 +250,12 @@ data Op2 = At | Has | Select | Contains
 data Op3 = Plus | Minus | Times | Div | Mod | LT | LE | EQ | NE | GT | GE
   deriving (Show)
 
--- .key
 keyF :: Text -> F
-keyF = Op2F At . ConstF . String
+keyF = ConstF . String
+
+-- .key
+atKeyF :: Text -> F
+atKeyF = Op2F At . keyF
 
 -- def map(f): [.[] | f];
 mapF :: F -> F
@@ -256,13 +277,31 @@ concatF xs = foldr1 BothF xs
 composeF [] = IdF
 composeF xs = foldr1 CompF xs
 
-valueOp1 :: Op1 -> ValueOp1
-valueOp1 Keys   = keysOp
-valueOp1 Length = lengthOp
-valueOp1 Add    = addOp
-valueOp1 Min    = minimum . toList
-valueOp1 Max    = minimum . toList
-valueOp1 Type   = String . T.pack . show . kindOf
+toEntry :: (Value,Value) -> Value
+toEntry (k,v) = Object $ H.fromList [("key",k),("value",v)]
+
+toEntries :: [(Value,Value)] -> Value
+toEntries = Array . V.fromList . fmap toEntry
+
+-- In ./jq to_entries is defined as:
+-- def to_entries: [keys[] as $k | {key: $k, value: .[$k]}];
+-- However I have no plan to implement variables yet
+toEntriesOp :: ValueOp1
+toEntriesOp (Object o) = toEntries . fmap (first String) . H.toList $ o
+toEntriesOp (Array  v) = toEntries . zip (fmap (Number . I) [0..]) . V.toList $ v
+toEntriesOp x = err1 x $ \x' -> [x', "has no keys"]
+
+fromEntriesF :: F
+fromEntriesF = parseF "map({(.key): .value}) | add"
+
+op1F :: Op1 -> Filter
+op1F Keys   = fmap $ keysOp
+op1F Length = fmap $ lengthOp
+op1F Add    = fmap $ addOp
+op1F Min    = fmap $ minimum . toList
+op1F Max    = fmap $ minimum . toList
+op1F Type   = fmap $ String . T.pack . show . kindOf
+op1F ToEntries = fmap $ toEntriesOp
 
 valueOp3 :: Op3 -> ValueOp3
 valueOp3 = op2to3 . valueOp3need2
@@ -287,7 +326,7 @@ filter AllF          = allF
 filter (BothF f g)   = bothF (filter f) (filter g)
 filter (ArrayF f)    = arrayF (filter f)
 filter (ObjectF o)   = objectF (fmap filter o)
-filter (Op1F op)     = fmap (valueOp1 op)
+filter (Op1F op)     = op1F op
 filter (Op2F op f)   = op2F op (filter f)
 filter (Op3F op f g) = op3F (valueOp3 op) (filter f) (filter g)
 filter EmptyF        = emptyF
@@ -322,12 +361,17 @@ parseOp0
   <|> Object mempty <$  string "{}"
   <?> "arity 0 operator (\"a\", 42, true, null, [], {}, ...)"
 
-parseOp1 :: Parser Op1
+parseOp1 :: Parser F
 parseOp1
-   =  Length <$ string "length"
-  <|> Keys   <$ string "keys"
-  <|> Add    <$ string "add"
-  <?> "arity 1 operator (length, keys, add)"
+   =  Op1F Length <$ string "length"
+  <|> Op1F Keys   <$ string "keys"
+  <|> Op1F Add    <$ string "add"
+  <|> Op1F Type   <$ string "type"
+  <|> Op1F Min    <$ string "min"
+  <|> Op1F Max    <$ string "max"
+  <|> Op1F ToEntries <$ string "to_entries"
+  <|> fromEntriesF <$ string "from_entries"
+  <?> "arity 1 operator (length, keys, add, ...)"
 
 parseOp2 :: Parser (F -> F)
 parseOp2
@@ -359,11 +403,11 @@ parseSimpleFilter
   (  char '.'  *> skipSpace *> parseDotFilter
  <|> EmptyF   <$  string "empty"
  <|> ConstF   <$> parseOp0
- <|> Op1F     <$> parseOp1
+ <|> parseOp1
  <|> parseOp2 <*  tok  '(' <*> parseFilter <* tok ')'
  <|> parseOp3 <*  tok  '(' <*> parseFilter <* tok ';' <*> parseFilter <* tok ')'
  <|> ArrayF   <$  char '[' <*> parseFilter <* tok ']'
- <|> ObjectF  <$> obj parseNoCommaFilter
+ <|> ObjectF  <$> objectFilterP
  <|> char '('  *> parseFilter <* tok ')'
  <?> "simple filter"
   )
@@ -389,20 +433,26 @@ parseNoCommaFilter = composeF <$> parseOpFilter `sepBy` tok '|'
 parseFilter = composeF <$> parseCommaFilter `sepBy1` tok '|'
            <?> "filter"
 
-obj :: Parser a -> Parser (Obj a)
-obj p = char '{' *> objectValues (skipSpace *> (bareWord <|> jstring)) p
+objectFilterP :: Parser (Obj F)
+objectFilterP = Obj
+             <$> (char '{' *> skipSpace *>
+                 ((pair <* skipSpace) `sepBy` (char ',' *> skipSpace))
+               <* char '}')
+   where fill k = (keyF k , atKeyF k)
+         keyFilterP =  ConstF . String <$> bareWord
+                   <|> char '(' *> parseFilter <* tok ')'
+                   <?> "key filter"
+         pair =  (,)  <$> (keyFilterP <* skipSpace) <*> (char ':' *> skipSpace *> parseNoCommaFilter)
+             <|> fill <$> bareWord
 
--- From: https://github.com/bos/aeson/blob/master/Data/Aeson/Parser/Internal.hs
-objectValues :: Parser Text -> Parser a -> Parser (Obj a)
-objectValues str val = do
-  skipSpace
-  let pair = do
-        a <- str <* skipSpace
-        b <- char ':' *> skipSpace *> val
-        return (a,b)
-  vals <- ((pair <* skipSpace) `sepBy` (char ',' *> skipSpace)) <* char '}'
-  return (H.fromList vals)
-{-# INLINE objectValues #-}
+parseF :: String -> F
+parseF = parsePure "filter" parseTopFilter . L8.pack
+
+parsePure :: String -> Parser a -> L.ByteString -> a
+parsePure msg p s =
+  case L.parse p s of
+    L.Done _ r -> r
+    L.Fail _ ctx msg' -> error (msg <> ": " <> msg' <> " context:" <> show ctx)
 
 parseIO :: String -> Parser a -> L.ByteString -> IO a
 parseIO msg p s =
