@@ -20,10 +20,12 @@ import Data.Vector (Vector)
 import qualified Data.HashSet as S
 import Data.Attoparsec.Char8 hiding (Result, parse)
 import qualified Data.Attoparsec.Lazy as L
+import Data.Attoparsec.Expr
 import System.Environment
 
 type ValueOp = Value -> Value
 type ValueBinOp = Value -> Value -> Value
+type BoolBinOp = Value -> Value -> Bool
 type Filter = [Value] -> [Value]
 type Obj = HashMap Text
 
@@ -82,6 +84,23 @@ x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 -- Only integers so far
 Number (I x) %| Number (I y) = Number (I (x `mod` y))
 x            %| y            = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
+
+
+-- TODO
+-- instance Ord Value where
+
+(<|), (<=|) :: BoolBinOp
+
+Null     <=| _        = True
+Number x <=| Number y = x < y
+-- less flexible than ./jq
+x        <=| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be compared"]
+
+x <| y | x /= y    = x <=| y
+       | otherwise = False
+
+boolBinOp :: BoolBinOp -> ValueBinOp
+boolBinOp f x y = Bool (f x y)
 
 lengthFi :: Value -> Int
 lengthFi Null       = 0
@@ -176,7 +195,7 @@ data F = IdF             -- .
 data Op = Length | Keys | Add | Transpose
   deriving (Show)
 
-data BinOp = Plus | Minus | Times | Div | Mod
+data BinOp = Plus | Minus | Times | Div | Mod | LT | LE | EQ | NE | GT | GE
   deriving (Show)
 
 -- .key
@@ -202,7 +221,7 @@ binOpF _  [x]   = x
 binOpF op [x,y] = Ap2F op x y
 binOpF _  _     = error "binOpF: not supported yet"
 
-concatF, composeF, sumF, productF, minusF, divF, modF :: [F] -> F
+concatF, composeF :: [F] -> F
 
 concatF [] = IdF
 concatF xs = foldr1 BothF xs
@@ -210,18 +229,18 @@ concatF xs = foldr1 BothF xs
 composeF [] = IdF
 composeF xs = foldr1 CompF xs
 
-sumF     = binOpF Plus
-productF = binOpF Times
-minusF   = binOpF Minus
-divF     = binOpF Div
-modF     = binOpF Mod
-
 valueBinOp :: BinOp -> ValueBinOp
 valueBinOp Plus  = (+|)
 valueBinOp Times = (*|)
 valueBinOp Minus = (-|)
 valueBinOp Div   = (/|)
 valueBinOp Mod   = (%|)
+valueBinOp LT    = boolBinOp (<|)
+valueBinOp LE    = boolBinOp (<=|)
+valueBinOp GE    = boolBinOp $ flip (<|)
+valueBinOp GT    = boolBinOp $ flip (<=|)
+valueBinOp EQ    = boolBinOp (==)
+valueBinOp NE    = boolBinOp (/=)
 
 valueOp :: Op -> ValueOp
 valueOp Keys   = keysOp
@@ -244,9 +263,7 @@ filter (SelectF f)   = selectF (filter f)
 filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
-parseSimpleFilter, parseTimesFilter, parseDivFilter,
-  parseModFilter,
-  parseMinusFilter, parsePlusFilter, parseCommaFilter,
+parseSimpleFilter, parseOpFilter, parseCommaFilter,
   parseNoCommaFilter, parseFilter, parseDotFilter :: Parser F
 
 parseDotFilter
@@ -290,21 +307,20 @@ parseSimpleFilter
  <|> char '(' *> parseFilter <* tok ')'
   )
 
--- TODO fix priorities
+table :: [[Operator B.ByteString F]]
+table   = [ [binary op AssocLeft | op <- [("*",Times),("/",Div),("%",Mod)]]
+          , [binary op AssocLeft | op <- [("+",Plus),("-",Minus)]]
+          , [binary op AssocNone | op <- [("<",LT),("<=",LE),("==",EQ),("!=",NE),(">",GT),(">=",GE)]]
+          ]
 
-parseTimesFilter = productF <$> parseSimpleFilter `sepBy` tok '*'
+binary :: (B.ByteString, BinOp) -> Assoc -> Operator B.ByteString F
+binary (name, fun) = Infix (Ap2F fun <$ string name)
 
-parseDivFilter = divF <$> parseTimesFilter `sepBy` tok '/'
+parseOpFilter = buildExpressionParser table parseSimpleFilter
 
-parseModFilter = modF <$> parseDivFilter `sepBy` tok '%'
+parseCommaFilter = concatF <$> parseOpFilter `sepBy` tok ','
 
-parsePlusFilter = sumF <$> parseModFilter `sepBy` tok '+'
-
-parseMinusFilter = minusF <$> parsePlusFilter `sepBy` tok '-'
-
-parseCommaFilter = concatF <$> parseMinusFilter `sepBy` tok ','
-
-parseNoCommaFilter = composeF <$> parseMinusFilter `sepBy` tok '|'
+parseNoCommaFilter = composeF <$> parseOpFilter `sepBy` tok '|'
 
 parseFilter = composeF <$> parseCommaFilter `sepBy1` tok '|'
 
