@@ -148,8 +148,11 @@ toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
 allF :: Filter
 allF = lift toList
 
+bothF1 :: Filter -> Filter -> Filter1
+bothF1 f g x = f [x] ++ g [x]
+
 bothF :: Filter -> Filter -> Filter
-bothF f g xs = f xs ++ g xs
+bothF f g = lift (bothF1 f g)
 
 arrayF :: Filter -> Filter
 arrayF f xs = [Array (V.fromList . f $ xs)]
@@ -166,14 +169,11 @@ $ jq -n -c '[(1,2,3,4) | .+1]'
 
 But:
 
-$ jq -n -c '[(1,2)+(2,1)]'
-[3,4,2,3]
+ap2F1 :: ValueBinOp -> Filter -> Filter -> Filter1
+ap2F1 op f g x = [ op y z | z <- g [x], y <- f [x] ]
 
-instead of [3,3]
--}
 ap2F :: ValueBinOp -> Filter -> Filter -> Filter
--- ap2F op f g xs = [ op x y | x <- f xs, y <- g xs ]
-ap2F op f g xs = zipWith op (f xs) (g xs)
+ap2F op f g = lift (ap2F1 op f g)
 
 emptyF :: Filter
 emptyF _ = []
