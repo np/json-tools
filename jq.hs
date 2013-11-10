@@ -1,6 +1,6 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings #-}
 import Control.Applicative as A
-import Prelude hiding (filter,Ordering(..))
+import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
 import Data.List (transpose, (\\))
@@ -22,6 +22,7 @@ import Data.Attoparsec.Char8 hiding (Result, parse)
 import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
+import Data.Traversable (sequence)
 
 type ValueOp = Value -> Value
 type ValueBinOp = Value -> Value -> Value
@@ -157,17 +158,14 @@ bothF f g = lift (bothF1 f g)
 arrayF :: Filter -> Filter
 arrayF f xs = [Array (V.fromList . f $ xs)]
 
+dist :: Obj [Value] -> [Obj Value]
+dist = sequence
+
+objectF1 :: Obj Filter -> Filter1
+objectF1 o x = fmap Object . dist . fmap (($[x])) $ o
+
 objectF :: Obj Filter -> Filter
-objectF o xs = [Object . H.fromList $ [ (k,y) | (k,f) <- H.toList o, y <- f xs ]]
-
-{- Confusing:
-$ jq -n -c '[(1,2,3,4) | .+.]'
-[2,4,6,8]
-
-$ jq -n -c '[(1,2,3,4) | .+1]'
-[2,3,4,5]
-
-But:
+objectF = lift . objectF1
 
 ap2F1 :: ValueBinOp -> Filter -> Filter -> Filter1
 ap2F1 op f g x = [ op y z | z <- g [x], y <- f [x] ]
