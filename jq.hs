@@ -217,13 +217,6 @@ trueValue _        = True
 selectF :: Filter -> Filter
 selectF f xs = [ x | x <- xs, any trueValue (f [x]) ]
 
--- TODO: deal properly with "f + g - h" and "f - g + h"
-binOpF :: BinOp -> [F] -> F
-binOpF _  []    = IdF
-binOpF _  [x]   = x
-binOpF op [x,y] = Ap2F op x y
-binOpF _  _     = error "binOpF: not supported yet"
-
 concatF, composeF :: [F] -> F
 
 concatF [] = IdF
