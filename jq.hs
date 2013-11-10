@@ -35,32 +35,32 @@ lift :: Filter1 -> Filter
 lift = concatMap
 -- lift f xs = [ r | x <- xs, r <- f x ]
 
-data Type = TyNull | TyNumber | TyString | TyBool | TyArray | TyObject
+data Kind = KNull | KNumber | KString | KBool | KArray | KObject
 
-instance Show Type where
-  show TyNull = "null"
-  show TyNumber = "number"
-  show TyString = "string"
-  show TyBool = "boolean"
-  show TyArray = "array"
-  show TyObject = "object"
+instance Show Kind where
+  show KNull = "null"
+  show KNumber = "number"
+  show KString = "string"
+  show KBool = "boolean"
+  show KArray = "array"
+  show KObject = "object"
 
-typeOf :: Value -> Type
-typeOf Null     = TyNull
-typeOf Number{} = TyNumber
-typeOf String{} = TyString
-typeOf Bool{}   = TyBool
-typeOf Array{}  = TyArray
-typeOf Object{} = TyObject
+kindOf :: Value -> Kind
+kindOf Null     = KNull
+kindOf Number{} = KNumber
+kindOf String{} = KString
+kindOf Bool{}   = KBool
+kindOf Array{}  = KArray
+kindOf Object{} = KObject
 
 err :: [String] -> a
 err = error . unwords
 
 err2 :: Value -> Value -> (String -> String -> [String]) -> a
-err2 x y msg = err (msg (show (typeOf x)) (show (typeOf y)))
+err2 x y msg = err (msg (show (kindOf x)) (show (kindOf y)))
 
 err1 :: Value -> (String -> [String]) -> a
-err1 x msg = err (msg (show (typeOf x)))
+err1 x msg = err (msg (show (kindOf x)))
 
 vecDiff :: Vector Value -> Vector Value -> Vector Value
 x `vecDiff` y = V.filter p x
