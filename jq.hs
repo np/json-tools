@@ -341,9 +341,9 @@ parseTopFilter = parseFilter <* skipSpace <* endOfInput
               <?> "toplevel filter"
 
 parseDotFilter
-  =  AllF    <$  string "[]"
- <|> Op2F At <$> (char '[' *> parseFilter <* tok ']')
- <|> keyF    <$> bareWord
+  =  AllF    <$  (skipSpace *> string "[]")
+ <|> Op2F At <$> (tok '[' *> parseFilter <* tok ']')
+ <|> atKeyF  <$> (skipSpace *> bareWord)
  <|> pure IdF
  <?> "dot filter"
 
@@ -401,7 +401,7 @@ tok c = skipSpace *> char c
 
 parseSimpleFilter
   =  skipSpace *>
-  (  char '.'  *> skipSpace *> parseDotFilter
+  (  char '.'  *> parseDotFilter
  <|> EmptyF   <$  string "empty"
  <|> ConstF   <$> parseOp0
  <|> parseOp1
