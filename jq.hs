@@ -271,7 +271,6 @@ parseSimpleFilter
  <|> EmptyF <$ string "empty"
  <|> OpF <$> parseOp
  <|> mapF <$> (string "map" *> tok '(' *> parseFilter <* tok ')')
- <|> Zip2F <$> (string "zip" *> tok '(' *> parseBinOp <* tok ')')
  <|> ConstF <$> parseConstFilter
  <|> ArrayF <$> (char '[' *> parseFilter <* tok ']')
  <|> ObjectF <$> obj parseNoCommaFilter
