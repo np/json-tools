@@ -401,7 +401,7 @@ tok c = skipSpace *> char c
 
 parseSimpleFilter
   =  skipSpace *>
-  (  char '.'  *> parseDotFilter
+  (  composeF <$> many1 (char '.'  *> parseDotFilter)
  <|> EmptyF   <$  string "empty"
  <|> ConstF   <$> parseOp0
  <|> parseOp1
