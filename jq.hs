@@ -335,10 +335,7 @@ filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
-  parseNoCommaFilter, parseFilter, parseDotFilter, parseTopFilter :: Parser F
-
-parseTopFilter = parseFilter <* skipSpace <* endOfInput
-              <?> "toplevel filter"
+  parseNoCommaFilter, parseFilter, parseDotFilter :: Parser F
 
 parseDotFilter
   =  AllF    <$  (skipSpace *> string "[]")
@@ -447,19 +444,22 @@ objectFilterP = Obj
              <|> fill <$> bareWord
 
 parseF :: String -> F
-parseF = either error id . parseM "filter" parseTopFilter . L8.pack
+parseF = either error id . parseM "filter" parseFilter . L8.pack
 
 parseM :: String -> Parser a -> L.ByteString -> Either String a
 parseM msg p s =
-    case L.parse p s of
+    case L.parse (top p) s of
       L.Done _ r -> Right r
       L.Fail _ ctx msg' -> Left (msg <> ": " <> msg' <> " context:" <> show ctx)
 
 parseIO :: String -> Parser a -> L.ByteString -> IO a
 parseIO msg p s = either fail return $ parseM msg p s
 
+top :: Parser a -> Parser a
+top p = p <* skipSpace <* endOfInput
+
 stream :: Parser [Value]
-stream = (value `sepBy` skipSpace) <* skipSpace <* endOfInput
+stream = value `sepBy` skipSpace
 
 readInput :: Bool -> IO [Value]
 readInput True = return [Null]
@@ -467,26 +467,24 @@ readInput _    = parseIO "JSON decoding" stream =<< L.getContents
 
 mainFilter :: Bool -> String -> IO ()
 mainFilter noinput arg = do
-  f <- parseIO "parsing filter" parseTopFilter (L8.pack arg)
+  f <- parseIO "parsing filter" parseFilter (L8.pack arg)
   -- print f
   input <- readInput noinput
   mapM_ (L8.putStrLn . encode) $ filter f input
 
 type TestCase = (L.ByteString,L.ByteString,[L.ByteString])
 
-parseTestCase :: TestCase -> Either String (F,Value,Value)
+parseTestCase :: TestCase -> Either String (F,Value,[Value])
 parseTestCase (prg,inp,out) =
-   (,,) <$> parseM "test program" parseTopFilter prg
-        <*> parseValue "test input"  inp
-        <*> parseValue "test output" (L8.unwords out)
-  where parseValue msg = parseM msg (value <* skipSpace <* endOfInput)
+   (,,) <$> parseM "test program" parseFilter prg
+        <*> parseM "test input"   value       inp
+        <*> parseM "test output"  stream      (L8.unwords out)
 
-
-runTest :: Either String (F, Value, Value) -> IO ()
+runTest :: Either String (F, Value, [Value]) -> IO ()
 runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
-runTest (Right test@(f, input, output))
-   | filter f [input] == [output] = {-print test >>-} putStrLn (color 32 "PASS\n")
-   | otherwise                    = putStrLn (color 31 "FAIL\n")
+runTest (Right {-test@-}(f, input, output))
+   | filter f [input] == output = {-print test >>-} putStrLn (color 32 "PASS\n")
+   | otherwise                  = putStrLn (color 31 "FAIL\n")
 
 color :: Int -> String -> String
 color n = ("\^[["++) . shows n . ('m':) . (++ "\^[[m")
