@@ -343,12 +343,12 @@ parseTopFilter = parseFilter <* skipSpace <* endOfInput
 parseDotFilter
   =  AllF    <$  (skipSpace *> string "[]")
  <|> Op2F At <$> (tok '[' *> parseFilter <* tok ']')
- <|> atKeyF  <$> (skipSpace *> bareWord)
+ <|> atKeyF  <$> (skipSpace *> (bareWord <|> jstring))
  <|> pure IdF
  <?> "dot filter"
 
 bareWord :: Parser Text
-bareWord = T.pack <$> some (satisfy (\c -> isAscii c && isAlpha c))
+bareWord = T.pack <$> some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
         <?> "bare word"
 
 parseOp0 :: Parser Value
