@@ -188,7 +188,7 @@ data F = IdF             -- .
        | ArrayF F        -- [f]
        | ObjectF (Obj F) -- {a: f, b: g}
        | EmptyF          -- empty
-       | OpF Op          -- length, keys
+       | OpF Op          -- length, keys, add
        | Ap2F BinOp F F  -- f + g, f - g, f / g, f * g
        | SelectF F       -- select(f)
        | ConstF Value    -- 1, "foo", null
