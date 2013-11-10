@@ -105,14 +105,16 @@ transposeOp (Array v) = Array . V.fromList
                               $ [ V.toList w | Array w <- V.toList v ]
 transposeOp x         = err1 x $ \x' -> [x', "cannot be transposed"]
 
-at :: Value -> Value -> Maybe Value
-Object o `at` String s = H.lookup s o
-Array  a `at` Number mn
-  | Success n <- fromJSON (Number mn) = a V.!? n
-_        `at` _ = Nothing
+at :: Value -> Value -> Value
+Object o `at` String s     = fromMaybe Null $ H.lookup s o
+Array  a `at` Number (I n) = fromMaybe Null $ a V.!? (fromInteger n)
+Array  a `at` Number (D d) = fromMaybe Null $ a V.!? (floor d)
+Null     `at` String{}     = Null
+Null     `at` Number{}     = Null
+x        `at` y = err2 x y $ \x' y' -> ["Cannot index", x', "with", y']
 
 atF :: Value -> Filter
-atF key = fmap (fromMaybe Null . (`at` key))
+atF key = fmap (`at`key)
 
 toList :: Value -> [Value]
 toList (Array v)  = V.toList v
