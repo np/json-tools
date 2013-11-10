@@ -1,6 +1,6 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings #-}
 import Control.Applicative as A
-import Prelude hiding (filter)
+import Prelude hiding (filter,Ordering(..))
 import Data.Maybe
 import Data.Char
 import Data.List (transpose, (\\))
