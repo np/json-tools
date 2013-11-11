@@ -141,7 +141,7 @@ lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, toNumberOp, toString
 lengthOp = toJSON . lengthFi
 
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
-keysOp (Object o) = toJSON $ H.keys o
+keysOp (Object o) = toJSON . sort . H.keys $ o
 keysOp x          = err1 x $ \x' -> [x', "has no keys"]
 
 addOp = foldr (+|) Null . toList
