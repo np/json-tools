@@ -130,7 +130,6 @@ instance Ord Value where
   Array  _ <= _        = True
   _        <= Array _  = False
   Object x <= Object y = NObj x <= NObj y
-  Object _ <= _        = False
 
 boolOp2 :: BoolOp2 -> ValueOp2
 boolOp2 f x y = Bool (f x y)
