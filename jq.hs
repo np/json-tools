@@ -31,8 +31,7 @@ type ValueOp1 = Value -> Value
 type ValueOp2 = Value -> Value -> Value
 type ValueOp3 = Value -> Value -> Value -> Value
 type BoolOp2 = Value -> Value -> Bool
-type Filter1 = Value -> [Value]
-type Filter = [Value] -> [Value]
+type Filter = Value -> [Value]
 
 newtype Obj a = Obj { unObj :: [(a,a)] }
   deriving (Eq, Show)
@@ -46,10 +45,6 @@ instance Traversable Obj where
 
 instance Foldable Obj where
   foldMap = foldMapDefault
-
-lift :: Filter1 -> Filter
-lift = concatMap
--- lift f xs = [ r | x <- xs, r <- f x ]
 
 data Kind = KNull | KNumber | KString | KBool | KArray | KObject
   deriving (Eq)
@@ -207,17 +202,11 @@ toList (Array v)  = V.toList v
 toList (Object o) = H.elems o
 toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
 
-allF :: Filter
-allF = lift toList
-
-bothF1 :: Filter -> Filter -> Filter1
-bothF1 f g x = f [x] ++ g [x]
-
 bothF :: Filter -> Filter -> Filter
-bothF f g = lift (bothF1 f g)
+bothF f g x = f x ++ g x
 
 arrayF :: Filter -> Filter
-arrayF f xs = [Array (V.fromList $ f [x]) | x <- xs]
+arrayF f x = [Array (V.fromList $ f x)]
 
 dist :: Obj [Value] -> [Obj Value]
 dist = sequence
@@ -226,28 +215,19 @@ asObjectKey :: Value -> Text
 asObjectKey (String x) = x
 asObjectKey x          = err1 x $ \x' -> ["Cannot use", x', "as object key"]
 
-objectF1 :: Obj Filter -> Filter1
-objectF1 o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($[x]) $ o
-
 objectF :: Obj Filter -> Filter
-objectF = lift . objectF1
-
-op2VF1 :: ValueOp2 -> Filter -> Filter1
-op2VF1 op f x = [ op x y | y <- f [x] ]
+objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($x) $ o
 
 op2VF :: ValueOp2 -> Filter -> Filter
-op2VF op f = lift (op2VF1 op f)
+op2VF op f x = [ op x y | y <- f x ]
 
 op2F :: Op2 -> Filter -> Filter
 op2F Select   = selectF
 op2F Has      = op2VF (boolOp2 has)
 op2F Contains = op2VF (boolOp2 (flip contains))
 
-op3F1 :: ValueOp3 -> Filter -> Filter -> Filter1
-op3F1 op f g x = [ op x y z | z <- g [x], y <- f [x] ]
-
 op3F :: ValueOp3 -> Filter -> Filter -> Filter
-op3F op f g = lift (op3F1 op f g)
+op3F op f g x = [ op x y z | z <- g x, y <- f x ]
 
 op2to3 :: ValueOp2 -> ValueOp3
 op2to3 f _ y z = f y z
@@ -256,7 +236,7 @@ emptyF :: Filter
 emptyF _ = []
 
 constF :: Value -> Filter
-constF v xs = [ v | _ <- xs ]
+constF v _ = [v]
 
 -- Filter
 data F = IdF             -- .
@@ -303,7 +283,7 @@ trueValue Null     = False
 trueValue _        = True
 
 selectF :: Filter -> Filter
-selectF f xs = [ x | x <- xs, any trueValue (f [x]) ]
+selectF f x = [x | any trueValue (f x)]
 
 concatF, composeF :: [F] -> F
 
@@ -330,21 +310,37 @@ toEntriesOp x = err1 x $ \x' -> [x', "has no keys"]
 fromEntriesF :: F
 fromEntriesF = parseF "map({(.key): .value}) | add"
 
-op1F :: Op1 -> Filter
-op1F Keys   = fmap $ keysOp
-op1F Length = fmap $ lengthOp
-op1F Add    = fmap $ addOp
-op1F Min    = fmap $ minimum . toList
-op1F Max    = fmap $ minimum . toList
-op1F Type   = fmap $ String . T.pack . show . kindOf
-op1F ToEntries = fmap $ toEntriesOp
-op1F Negate = fmap $ negateOp
-op1F Sqrt   = fmap $ sqrtOp
-op1F Floor  = fmap $ floorOp
-op1F Sort   = fmap $ sortOp
-op1F ToNumber = fmap toNumberOp
-op1F ToString = fmap toStringOp
-op1F Not      = fmap $ Bool . not . trueValue
+{-
+--withEntriesF :: F -> F
+--withEntriesF = `CompF` toEntriesOp
+
+data Def = Def { name :: Text, params :: [Text], body :: F }
+
+paramsP :: Parser [Text]
+paramsP =  tok '(' *> (bareWord `sepBy1` tok ';') <* tok ')'
+       <|> pure []
+       <?> "parameters"
+
+definitionP :: Parser Def
+definitionP = Def <$ string "def" <*> bareWord <*> paramsP <* tok ':' <*> parseFilter <* tok ';'
+           <?> "definition"
+-}
+
+valueOp1 :: Op1 -> ValueOp1
+valueOp1 Keys      = keysOp
+valueOp1 Length    = lengthOp
+valueOp1 Add       = addOp
+valueOp1 Min       = minimum . toList
+valueOp1 Max       = minimum . toList
+valueOp1 Type      = String . T.pack . show . kindOf
+valueOp1 ToEntries = toEntriesOp
+valueOp1 Negate    = negateOp
+valueOp1 Sqrt      = sqrtOp
+valueOp1 Floor     = floorOp
+valueOp1 Sort      = sortOp
+valueOp1 ToNumber  = toNumberOp
+valueOp1 ToString  = toStringOp
+valueOp1 Not       = Bool . not . trueValue
 
 valueOp3 :: Op3 -> ValueOp3
 valueOp3 = op2to3 . valueOp3need2
@@ -366,13 +362,13 @@ valueOp3need2 Or    = boolOp2' (||)
 valueOp3need2 At    = at
 
 filter :: F -> Filter
-filter IdF           = id
-filter (CompF f g)   = filter g . filter f
-filter AllF          = allF
+filter IdF           = pure
+filter (CompF f g)   = concatMap (filter g) . filter f
+filter AllF          = toList
 filter (BothF f g)   = bothF (filter f) (filter g)
 filter (ArrayF f)    = arrayF (filter f)
 filter (ObjectF o)   = objectF (fmap filter o)
-filter (Op1F op)     = op1F op
+filter (Op1F op)     = pure . valueOp1 op
 filter (Op2F op f)   = op2F op (filter f)
 filter (Op3F op f g) = op3F (valueOp3 op) (filter f) (filter g)
 filter EmptyF        = emptyF
@@ -533,7 +529,7 @@ mainFilter noinput arg = do
   f <- parseIO "parsing filter" parseFilter (L8.pack arg)
   -- print f
   input <- readInput noinput
-  mapM_ (L8.putStrLn . encode) $ filter f input
+  mapM_ (L8.putStrLn . encode) $ concatMap (filter f) input
 
 type TestCase = (L.ByteString,L.ByteString,[L.ByteString])
 
@@ -546,7 +542,7 @@ parseTestCase (prg,inp,out) =
 runTest :: Either String (F, Value, [Value]) -> IO ()
 runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
 runTest (Right {-test@-}(f, input, reference)) =
-  let output = filter f [input] in
+  let output = filter f input in
   if output == reference then
     {-print test >>-} putStrLn (color 32 "PASS\n")
   else do
