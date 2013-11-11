@@ -5,7 +5,7 @@ import Control.Monad ((<=<))
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
-import Data.List ((\\))
+import Data.List ((\\),sort)
 import Data.Monoid
 import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
@@ -137,7 +137,7 @@ lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = B.length . encodeUtf8 $ s
 lengthFi x          = err1 x $ \x' -> [x', "has no length"]
 
-lengthOp, keysOp, addOp :: ValueOp1
+lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, toNumberOp, toStringOp :: ValueOp1
 
 lengthOp = toJSON . lengthFi
 
@@ -146,6 +146,30 @@ keysOp (Object o) = toJSON $ H.keys o
 keysOp x          = err1 x $ \x' -> [x', "has no keys"]
 
 addOp = foldr (+|) Null . toList
+
+negateOp (Number n) = Number (negate n)
+negateOp x          = err1 x $ \x' -> [x', "cannot be negated"]
+
+toDouble :: Number -> Double
+toDouble (D d) = d
+toDouble (I i) = fromIntegral i
+
+sqrtOp (Number n) = Number (D (sqrt (toDouble n)))
+sqrtOp x          = err1 x $ \x' -> [x', "has no square root"]
+
+floorOp (Number n) = Number (I (floor (toDouble n)))
+floorOp x          = err1 x $ \x' -> [x', "cannot be floored"]
+
+sortOp (Array v) = Array (V.fromList . sort . V.toList $ v)
+sortOp x         = err1 x $ \x' -> [x', "cannot be sorted, as it is not an array"]
+
+toNumberOp n@Number{} = n
+toNumberOp (String s) = either (const e) Number $ parseM "number" number (L8.pack . T.unpack $ s)
+  where e = error $ "Invalid numeric literal (while parsing '" <> T.unpack s <> "'"
+toNumberOp x     = err1 x $ \x' -> [x', "cannot be parsed as a number"]
+
+toStringOp s@String{} = s
+toStringOp x = String . T.pack . L8.unpack . encode $ x
 
 at :: ValueOp2
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
@@ -243,6 +267,7 @@ data F = IdF             -- .
   deriving (Show)
 
 data Op1 = Length | Keys | Add | Type | Min | Max | ToEntries
+         | ToNumber | ToString | Negate | Floor | Sqrt | Sort
   deriving (Show)
 
 data Op2 = At | Has | Select | Contains
@@ -303,6 +328,12 @@ op1F Min    = fmap $ minimum . toList
 op1F Max    = fmap $ minimum . toList
 op1F Type   = fmap $ String . T.pack . show . kindOf
 op1F ToEntries = fmap $ toEntriesOp
+op1F Negate = fmap $ negateOp
+op1F Sqrt   = fmap $ sqrtOp
+op1F Floor  = fmap $ floorOp
+op1F Sort   = fmap $ sortOp
+op1F ToNumber = fmap toNumberOp
+op1F ToString = fmap toStringOp
 
 valueOp3 :: Op3 -> ValueOp3
 valueOp3 = op2to3 . valueOp3need2
@@ -369,6 +400,12 @@ parseOp1
   <|> Op1F Max    <$ string "max"
   <|> Op1F ToEntries <$ string "to_entries"
   <|> fromEntriesF <$ string "from_entries"
+  <|> Op1F Negate <$ (string "negate" <|> string "_negate")
+  <|> Op1F Sqrt   <$ (string "sqrt"  <|> string "_sqrt")
+  <|> Op1F Floor  <$ (string "floor" <|> string "_floor")
+  <|> Op1F Sort   <$ string "sort"
+  <|> Op1F ToNumber <$ string "tonumber"
+  <|> Op1F ToString <$ string "tostring"
   <?> "arity 1 operator (length, keys, add, ...)"
 
 parseOp2 :: Parser (F -> F)
