@@ -236,7 +236,6 @@ op2VF op f = lift (op2VF1 op f)
 
 op2F :: Op2 -> Filter -> Filter
 op2F Select   = selectF
-op2F At       = op2VF at
 op2F Has      = op2VF (boolOp2 has)
 op2F Contains = op2VF (boolOp2 (flip contains))
 
@@ -264,8 +263,8 @@ data F = IdF             -- .
        | ObjectF (Obj F) -- {a: f, b: g}
        | EmptyF          -- empty
        | Op1F Op1        -- length, keys, add
-       | Op2F Op2 F      -- .[f], select(f), has(f), ...
-       | Op3F Op3 F F    -- f + g, f - g, f / g, f * g
+       | Op2F Op2 F      -- select(f), has(f), ...
+       | Op3F Op3 F F    -- f[g], f + g, f - g, f / g, f * g
        | ConstF Value    -- 1, "foo", null
        | ErrorF String
   deriving (Show)
@@ -275,12 +274,12 @@ data Op1 = Length | Keys | Add | Type | Min | Max | ToEntries
          | Not
   deriving (Show)
 
-data Op2 = At | Has | Select | Contains
+data Op2 = Has | Select | Contains
   deriving (Show)
 
 data Op3 = Plus | Minus | Times | Div | Mod
          | LT | LE | EQ | NE | GT | GE
-         | And | Or
+         | And | Or | At
   deriving (Show)
 
 keyF :: Text -> F
@@ -288,7 +287,7 @@ keyF = ConstF . String
 
 -- .key
 atKeyF :: Text -> F
-atKeyF = Op2F At . keyF
+atKeyF = Op3F At IdF . keyF
 
 -- def map(f): [.[] | f];
 mapF :: F -> F
@@ -360,6 +359,7 @@ valueOp3need2 EQ    = boolOp2 (==)
 valueOp3need2 NE    = boolOp2 (/=)
 valueOp3need2 And   = boolOp2' (&&)
 valueOp3need2 Or    = boolOp2' (||)
+valueOp3need2 At    = at
 
 filter :: F -> Filter
 filter IdF           = id
@@ -376,23 +376,20 @@ filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
-  parseNoCommaFilter, parseFilter, parseDotFilter, parseAtFilters,
-  parseConcFilter :: Parser F
-
-compP :: Parser F -> Parser F -> Parser F
-compP p q = CompF <$> p <*> q
+  parseNoCommaFilter, parseFilter, parseDotFilter, parseConcFilter :: Parser F
 
 parseDotFilter =
-   ((atKeyF <$> (skipSpace *> (bareWord <|> jstring)) <|> pure IdF)
-    `compP`
-    parseAtFilters)
+   parseAtFilters =<< (atKeyF <$> (skipSpace *> (bareWord <|> jstring)) <|> pure IdF)
   <?> "dot filter"
 
-parseAtFilters =
-  composeF <$>
-  many (  AllF    <$  (skipSpace *> string "[]")
-      <|> Op2F At <$> (tok '[' *> parseFilter <* tok ']')
-       )
+parseAtFilters :: F -> Parser F
+parseAtFilters f =
+  do g <- (  f `CompF` AllF <$  (skipSpace *> string "[]")
+         <|> Op3F At f    <$> (tok '[' *> parseFilter <* tok ']')
+         <|> pure IdF )
+     case g of
+       IdF -> return f
+       _   -> parseAtFilters g
 
 bareWord :: Parser Text
 bareWord = T.pack <$> some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
@@ -467,7 +464,7 @@ parseSimpleFilter
  <?> "simple filter"
   )
 
-parseConcFilter = parseSimpleFilter `compP` parseAtFilters
+parseConcFilter = parseAtFilters =<< parseSimpleFilter
                <?> "conc filter"
 
 table :: [[Operator B.ByteString F]]
