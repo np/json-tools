@@ -175,8 +175,8 @@ toStringOp x = String . T.pack . L8.unpack . encode $ x
 
 at :: ValueOp2
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
-Array  a `at` Number (I n) = fromMaybe Null $ a V.!? (fromInteger n)
-Array  a `at` Number (D d) = fromMaybe Null $ a V.!? (floor d)
+Array  a `at` Number (I n) = fromMaybe Null $ a V.!? fromInteger n
+Array  a `at` Number (D d) = fromMaybe Null $ a V.!? floor d
 Null     `at` String{}     = Null
 Null     `at` Number{}     = Null
 x        `at` y = err2 x y $ \x' y' -> ["Cannot index", x', "with", y']
@@ -230,7 +230,7 @@ op3F :: ValueOp3 -> Filter -> Filter -> Filter
 op3F op f g x = [ op x y z | z <- g x, y <- f x ]
 
 op2to3 :: ValueOp2 -> ValueOp3
-op2to3 f _ y z = f y z
+op2to3 = const
 
 emptyF :: Filter
 emptyF _ = []
@@ -384,9 +384,9 @@ parseDotFilter =
 
 parseAtFilters :: F -> Parser F
 parseAtFilters f =
-  do g <- (  f `CompF` AllF <$  (skipSpace *> string "[]")
+  do g <-    f `CompF` AllF <$  (skipSpace *> string "[]")
          <|> Op3F At f    <$> (tok '[' *> parseFilter <* tok ']')
-         <|> pure IdF )
+         <|> pure IdF
      case g of
        IdF -> return f
        _   -> parseAtFilters g
@@ -571,7 +571,7 @@ splitTestCase _        = error "splitTestCase: too few lines for a test case"
 splitOnEmptyLines :: [L.ByteString] -> [[L.ByteString]]
 splitOnEmptyLines []  = []
 splitOnEmptyLines xss =
-  case span (not . L.null) (dropWhile L.null xss) of
+  case break L.null (dropWhile L.null xss) of
     (yss,zss) -> yss : splitOnEmptyLines zss
 
 dropComment :: L.ByteString -> L.ByteString
