@@ -519,9 +519,14 @@ parseTestCase (prg,inp,out) =
 
 runTest :: Either String (F, Value, [Value]) -> IO ()
 runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
-runTest (Right {-test@-}(f, input, output))
-   | filter f [input] == output = {-print test >>-} putStrLn (color 32 "PASS\n")
-   | otherwise                  = putStrLn (color 31 "FAIL\n")
+runTest (Right {-test@-}(f, input, reference)) =
+  let output = filter f [input] in
+  if output == reference then
+    {-print test >>-} putStrLn (color 32 "PASS\n")
+  else do
+    putStrLn "was expected, but instead this is the output"
+    mapM_ (L8.putStrLn . encode) output
+    putStrLn (color 31 "FAIL\n")
 
 color :: Int -> String -> String
 color n = ("\^[["++) . shows n . ('m':) . (++ "\^[[m")
