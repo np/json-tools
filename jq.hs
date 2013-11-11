@@ -2,10 +2,11 @@
 import Control.Applicative as A
 import Control.Arrow (first,(***))
 import Control.Monad ((<=<))
+import Data.Ord (comparing)
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
-import Data.List ((\\),sort)
+import Data.List ((\\),sort,sortBy)
 import Data.Monoid
 import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
@@ -111,7 +112,7 @@ newtype NObj a = NObj (HashMap Text a)
   deriving (Eq)
 instance Ord a => Ord (NObj a) where
   x <= y | x == y = True
-  _ <= _ = error "Not yet implemented: comparison of objects"
+  NObj x <= NObj y = f x <= f y where f = sortBy (comparing fst) . H.toList
 
 instance Ord Value where
   Null     <= _        = True
