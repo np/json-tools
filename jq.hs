@@ -192,7 +192,7 @@ x `contains` y
   | kindOf x /= kindOf y = err2 x y $ \x' y' -> [x', "and", y', "cannot have their containment checked"]
   | x == y = True
 String x `contains` String y = x `T.isInfixOf` y
--- TODO: substring, subarray, ...
+-- TODO: subarray, ...
 x `contains` _ = err1 x $ \x' -> ["Not yet implemented: containement on", x']
 
 toList :: Value -> [Value]
@@ -235,7 +235,7 @@ op2F :: Op2 -> Filter -> Filter
 op2F Select   = selectF
 op2F At       = op2VF at
 op2F Has      = op2VF (boolOp2 has)
-op2F Contains = op2VF (boolOp2 contains)
+op2F Contains = op2VF (boolOp2 (flip contains))
 
 op3F1 :: ValueOp3 -> Filter -> Filter -> Filter1
 op3F1 op f g x = [ op x y z | z <- g [x], y <- f [x] ]
