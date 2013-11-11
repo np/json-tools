@@ -104,7 +104,7 @@ Number x /| Number y = Number (x / y)
 x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 
 -- Only integers so far
-Number (I x) %| Number (I y) = Number (I (x `mod` y))
+Number (I x) %| Number (I y) = Number (I (x `rem` y))
 x            %| y            = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
 
 newtype NObj a = NObj (HashMap Text a)
