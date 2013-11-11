@@ -134,7 +134,7 @@ lengthFi :: Value -> Int
 lengthFi Null       = 0
 lengthFi (Array v)  = V.length v
 lengthFi (Object o) = length . H.toList $ o
-lengthFi (String s) = B.length . encodeUtf8 $ s
+lengthFi (String s) = T.length s
 lengthFi x          = err1 x $ \x' -> [x', "has no length"]
 
 lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, toNumberOp, toStringOp :: ValueOp1
