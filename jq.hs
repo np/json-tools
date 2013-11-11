@@ -116,14 +116,19 @@ instance Ord a => Ord (NObj a) where
 
 instance Ord Value where
   Null     <= _        = True
+  _        <= Null     = False
   Bool   x <= Bool y   = x <= y
   Bool   _ <= _        = True
+  _        <= Bool _   = False
   Number x <= Number y = x <= y
   Number _ <= _        = True
+  _        <= Number _ = False
   String x <= String y = x <= y
   String _ <= _        = True
+  _        <= String _ = False
   Array  x <= Array  y = x <= y
   Array  _ <= _        = True
+  _        <= Array _  = False
   Object x <= Object y = NObj x <= NObj y
   Object _ <= _        = False
 
