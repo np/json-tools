@@ -130,6 +130,9 @@ instance Ord Value where
 boolOp2 :: BoolOp2 -> ValueOp2
 boolOp2 f x y = Bool (f x y)
 
+boolOp2' :: (Bool -> Bool -> Bool) -> ValueOp2
+boolOp2' f x y = Bool (f (trueValue x) (trueValue y))
+
 lengthFi :: Value -> Int
 lengthFi Null       = 0
 lengthFi (Array v)  = V.length v
@@ -269,12 +272,15 @@ data F = IdF             -- .
 
 data Op1 = Length | Keys | Add | Type | Min | Max | ToEntries
          | ToNumber | ToString | Negate | Floor | Sqrt | Sort
+         | Not
   deriving (Show)
 
 data Op2 = At | Has | Select | Contains
   deriving (Show)
 
-data Op3 = Plus | Minus | Times | Div | Mod | LT | LE | EQ | NE | GT | GE
+data Op3 = Plus | Minus | Times | Div | Mod
+         | LT | LE | EQ | NE | GT | GE
+         | And | Or
   deriving (Show)
 
 keyF :: Text -> F
@@ -335,6 +341,7 @@ op1F Floor  = fmap $ floorOp
 op1F Sort   = fmap $ sortOp
 op1F ToNumber = fmap toNumberOp
 op1F ToString = fmap toStringOp
+op1F Not      = fmap $ Bool . not . trueValue
 
 valueOp3 :: Op3 -> ValueOp3
 valueOp3 = op2to3 . valueOp3need2
@@ -351,6 +358,8 @@ valueOp3need2 GE    = boolOp2 (>=)
 valueOp3need2 GT    = boolOp2 (>)
 valueOp3need2 EQ    = boolOp2 (==)
 valueOp3need2 NE    = boolOp2 (/=)
+valueOp3need2 And   = boolOp2' (&&)
+valueOp3need2 Or    = boolOp2' (||)
 
 filter :: F -> Filter
 filter IdF           = id
@@ -407,6 +416,7 @@ parseOp1
   <|> Op1F Sort   <$ string "sort"
   <|> Op1F ToNumber <$ string "tonumber"
   <|> Op1F ToString <$ string "tostring"
+  <|> Op1F Not    <$ string "not"
   <?> "arity 1 operator (length, keys, add, ...)"
 
 parseOp2 :: Parser (F -> F)
@@ -452,6 +462,8 @@ table :: [[Operator B.ByteString F]]
 table   = [ [binary op AssocLeft | op <- [("*",Times),("/",Div),("%",Mod)]]
           , [binary op AssocLeft | op <- [("+",Plus),("-",Minus)]]
           , [binary op AssocNone | op <- [("<=",LE),("<",LT),("==",EQ),("!=",NE),(">=",GE),(">",GT)]]
+          , [binary ("and",And) AssocRight]
+          , [binary ("or",Or) AssocRight]
           ]
 
 binary :: (B.ByteString, Op3) -> Assoc -> Operator B.ByteString F
