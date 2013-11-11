@@ -13,7 +13,6 @@ import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
 import qualified Data.Text as T
 import Data.Text (Text)
-import Data.Text.Encoding (encodeUtf8)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
