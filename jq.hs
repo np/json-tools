@@ -190,6 +190,7 @@ contains :: BoolOp2
 x `contains` y
   | kindOf x /= kindOf y = err2 x y $ \x' y' -> [x', "and", y', "cannot have their containment checked"]
   | x == y = True
+String x `contains` String y = x `T.isInfixOf` y
 -- TODO: substring, subarray, ...
 x `contains` _ = err1 x $ \x' -> ["Not yet implemented: containement on", x']
 
