@@ -376,14 +376,23 @@ filter (ConstF v)    = constF v
 filter (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
-  parseNoCommaFilter, parseFilter, parseDotFilter :: Parser F
+  parseNoCommaFilter, parseFilter, parseDotFilter, parseAtFilters,
+  parseConcFilter :: Parser F
 
-parseDotFilter
-  =  AllF    <$  (skipSpace *> string "[]")
- <|> Op2F At <$> (tok '[' *> parseFilter <* tok ']')
- <|> atKeyF  <$> (skipSpace *> (bareWord <|> jstring))
- <|> pure IdF
- <?> "dot filter"
+compP :: Parser F -> Parser F -> Parser F
+compP p q = CompF <$> p <*> q
+
+parseDotFilter =
+   ((atKeyF <$> (skipSpace *> (bareWord <|> jstring)) <|> pure IdF)
+    `compP`
+    parseAtFilters)
+  <?> "dot filter"
+
+parseAtFilters =
+  composeF <$>
+  many (  AllF    <$  (skipSpace *> string "[]")
+      <|> Op2F At <$> (tok '[' *> parseFilter <* tok ']')
+       )
 
 bareWord :: Parser Text
 bareWord = T.pack <$> some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
@@ -458,6 +467,9 @@ parseSimpleFilter
  <?> "simple filter"
   )
 
+parseConcFilter = parseSimpleFilter `compP` parseAtFilters
+               <?> "conc filter"
+
 table :: [[Operator B.ByteString F]]
 table   = [ [binary op AssocLeft | op <- [("*",Times),("/",Div),("%",Mod)]]
           , [binary op AssocLeft | op <- [("+",Plus),("-",Minus)]]
@@ -469,7 +481,7 @@ table   = [ [binary op AssocLeft | op <- [("*",Times),("/",Div),("%",Mod)]]
 binary :: (B.ByteString, Op3) -> Assoc -> Operator B.ByteString F
 binary (name, fun) = Infix (Op3F fun <$ skipSpace <* string name)
 
-parseOpFilter = buildExpressionParser table parseSimpleFilter
+parseOpFilter = buildExpressionParser table parseConcFilter
              <?> "op filter"
 
 parseCommaFilter = concatF <$> parseOpFilter `sepBy` tok ','
