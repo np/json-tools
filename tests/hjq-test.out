@@ -1,0 +1,774 @@
+true
+null
+true
+[32mPASS
+[m
+false
+null
+false
+[32mPASS
+[m
+null
+42
+null
+[32mPASS
+[m
+1
+null
+1
+[32mPASS
+[m
+-1
+null
+-1
+[32mPASS
+[m
+{}
+null
+{}
+[32mPASS
+[m
+[]
+null
+[]
+[32mPASS
+[m
+.
+﻿"byte order mark"
+"byte order mark"
+test input: Failed reading: takeWhile1 context:[]
+[31mERROR
+[m
+"Aa\r\n\t\b\f\u03bc"
+null
+"Aa\u000d\u000a\u0009\u0008\u000c\u03bc"
+[32mPASS
+[m
+.
+"Aa\r\n\t\b\f\u03bc"
+"Aa\u000d\u000a\u0009\u0008\u000c\u03bc"
+[32mPASS
+[m
+"inter\("pol" + "ation")"
+null
+"interpolation"
+test program: endOfInput context:[]
+[31mERROR
+[m
+@text,@json,([1,.] | @csv),@html,@uri,@sh,@base64
+"<>&'\""
+"<>&'\""
+"\"<>&'\\\"\""
+"1,\"<>&'\"\"\""
+"&lt;&gt;&amp;&apos;&quot;"
+"%3c%3e%26'%22"
+"'<>&'\\''\"'"
+"PD4mJyI="
+test program: endOfInput context:[]
+[31mERROR
+[m
+@uri
+"\u03bc"
+"%ce%bc"
+test program: endOfInput context:[]
+[31mERROR
+[m
+@html "<b>\(.)</b>"
+"<script>hax</script>"
+"<b>&lt;script&gt;hax&lt;/script&gt;</b>"
+test program: endOfInput context:[]
+[31mERROR
+[m
+{a: 1}
+null
+{"a":1}
+[32mPASS
+[m
+{a,b,(.d):.a,e:.b}
+{"a":1, "b":2, "c":3, "d":"c"}
+{"a":1, "b":2, "c":1, "e":2}
+[32mPASS
+[m
+{"a",b,"a$\(1+1)"}
+{"a":1, "b":2, "c":3, "a$2":4}
+{"a":1, "b":2, "a$2":4}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.foo
+{"foo": 42, "bar": 43}
+42
+[32mPASS
+[m
+.foo | .bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+[32mPASS
+[m
+.foo.bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+[32mPASS
+[m
+.foo_bar
+{"foo_bar": 2}
+2
+[32mPASS
+[m
+.["foo"].bar
+{"foo": {"bar": 42}, "bar": "badvalue"}
+42
+[32mPASS
+[m
+."foo"."bar"
+{"foo": {"bar": 20}}
+20
+[32mPASS
+[m
+.[]
+[1,2,3]
+1
+2
+3
+[32mPASS
+[m
+1,1
+[]
+1
+1
+[32mPASS
+[m
+1,.
+[]
+1
+[]
+[32mPASS
+[m
+[.]
+[2]
+[[2]]
+[32mPASS
+[m
+[[2]]
+[3]
+[[2]]
+[32mPASS
+[m
+[{}]
+[2]
+[{}]
+[32mPASS
+[m
+[.[]]
+["a"]
+["a"]
+[32mPASS
+[m
+[(.,1),((.,.[]),(2,3))]
+["a","b"]
+[["a","b"],1,["a","b"],"a","b",2,3]
+[32mPASS
+[m
+[([5,5][]),.,.[]]
+[1,2,3]
+[5,5,[1,2,3],1,2,3]
+[32mPASS
+[m
+{x: (1,2)},{x:3} | .x
+null
+1
+2
+3
+[32mPASS
+[m
+[.[3:2], .[-5:4], .[:-2], .[-2:], .[3:3][1:], .[10:]]
+[0,1,2,3,4,5,6]
+[[], [2,3], [0,1,2,3,4], [5,6], [], []]
+test program: endOfInput context:[]
+[31mERROR
+[m
+del(.[2:4],.[0],.[-2:])
+[0,1,2,3,4,5,6,7]
+[1,4,5]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[2:4] = ([], ["a","b"], ["a","b","c"])
+[0,1,2,3,4,5,6,7]
+[0,1,4,5,6,7]
+[0,1,"a","b",4,5,6,7]
+[0,1,"a","b","c",4,5,6,7]
+test program: endOfInput context:[]
+[31mERROR
+[m
+1 as $x | 2 as $y | [$x,$y,$x]
+null
+[1,2,1]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[1,2,3][] as $x | [[4,5,6,7][$x]]
+null
+[5]
+[6]
+[7]
+test program: endOfInput context:[]
+[31mERROR
+[m
+42 as $x | . | . | . + 432 | $x + 1
+34324
+43
+test program: endOfInput context:[]
+[31mERROR
+[m
+1 as $x | [$x,$x,$x as $x | $x]
+null
+[1,1,1]
+test program: endOfInput context:[]
+[31mERROR
+[m
+1+1
+null
+2
+[32mPASS
+[m
+1+1
+"wtasdf"
+2.0
+[32mPASS
+[m
+2-1
+null
+1
+[32mPASS
+[m
+2-(-1)
+null
+3
+[32mPASS
+[m
+1e+0+0.001e3
+"I wonder what this will be?"
+20e-1
+[32mPASS
+[m
+.+4
+15
+19.0
+[32mPASS
+[m
+.+null
+{"a":42}
+{"a":42}
+[32mPASS
+[m
+null+.
+null
+null
+[32mPASS
+[m
+.a+.b
+{"a":42}
+42
+[32mPASS
+[m
+[1,2,3] + [.]
+null
+[1,2,3,null]
+[32mPASS
+[m
+{"a":1} + {"b":2} + {"c":3}
+"asdfasdf"
+{"a":1, "b":2, "c":3}
+[32mPASS
+[m
+"asdf" + "jkl;" + . + . + .
+"some string"
+"asdfjkl;some stringsome stringsome string"
+[32mPASS
+[m
+"\u0000\u0020\u0000" + .
+"\u0000\u0020\u0000"
+"\u0000 \u0000\u0000 \u0000"
+[32mPASS
+[m
+42 - .
+11
+31
+[32mPASS
+[m
+[1,2,3,4,1] - [.,3]
+1
+[2,4]
+[32mPASS
+[m
+[10 * 20, 20 / .]
+4
+[200, 5]
+[32mPASS
+[m
+1 + 2 * 2 + 10 / 2
+null
+10
+[32mPASS
+[m
+[16 / 4 / 2, 16 / 4 * 2, 16 - 4 - 2, 16 - 4 + 2]
+null
+[2, 8, 10, 14]
+[32mPASS
+[m
+25 % 7
+null
+4
+[32mPASS
+[m
+49732 % 472
+null
+172
+[32mPASS
+[m
+1 + tonumber + ("10" | tonumber)
+4
+15
+[32mPASS
+[m
+[{"a":42},.object,10,.num,false,true,null,"b",[1,4]] | .[] as $x | [$x == .[]]
+{"object": {"a":42}, "num":10.0}
+[true,  true,  false, false, false, false, false, false, false]
+[true,  true,  false, false, false, false, false, false, false]
+[false, false, true,  true,  false, false, false, false, false]
+[false, false, true,  true,  false, false, false, false, false]
+[false, false, false, false, true,  false, false, false, false]
+[false, false, false, false, false, true,  false, false, false]
+[false, false, false, false, false, false, true,  false, false]
+[false, false, false, false, false, false, false, true,  false]
+[false, false, false, false, false, false, false, false, true ]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[.[] | length]
+[[], {}, [1,2], {"a":42}, "asdf", "\u03bc"]
+[0, 0, 2, 1, 4, 1]
+[32mPASS
+[m
+map(keys)
+[{}, {"abcd":1,"abc":2,"abcde":3}, {"x":1, "z": 3, "y":2}]
+[[], ["abc","abcd","abcde"], ["x","y","z"]]
+[32mPASS
+[m
+[1,2,empty,3,empty,4]
+null
+[1,2,3,4]
+[32mPASS
+[m
+map(add)
+[[], [1,2,3], ["a","b","c"], [[3],[4,5],[6]], [{"a":1}, {"b":2}, {"a":3}]]
+[null, 6, "abc", [3,4,5,6], {"a":3, "b": 2}]
+[32mPASS
+[m
+def f: . + 1; def g: def g: . + 100; f | g | f; (f | g), g
+3.0
+106.0
+105.0
+test program: endOfInput context:[]
+[31mERROR
+[m
+def f: (1000,2000); f
+123412345
+1000
+2000
+test program: endOfInput context:[]
+[31mERROR
+[m
+([1,2] + [4,5])
+[1,2,3]
+[1,2,4,5]
+[32mPASS
+[m
+true
+[1]
+true
+[32mPASS
+[m
+null,1,null
+"hello"
+null
+1
+null
+[32mPASS
+[m
+[1,2,3]
+[5,6]
+[1,2,3]
+[32mPASS
+[m
+[.[]|floor]
+[-1.1,1.1,1.9]
+[-2, 1, 1]
+[32mPASS
+[m
+[.[]|sqrt]
+[4,9]
+[2,3]
+[32mPASS
+[m
+(add / length) as $m | map((. - $m) as $d | $d * $d) | add / length | sqrt
+[2,4,4,4,5,5,7,9]
+2
+test program: endOfInput context:[]
+[31mERROR
+[m
+def f(x): x | x; f([.], . + [42])
+[1,2,3]
+[[[1,2,3]]]
+[[1,2,3],42]
+[[1,2,3,42]]
+[1,2,3,42,42]
+test program: endOfInput context:[]
+[31mERROR
+[m
+def id(x):x; 2000 as $x | def f(x):1 as $x | id([$x, x, x]); def g(x): 100 as $x | f($x,$x+x); g($x)
+"more testing"
+[1,100,2100.0,100,2100.0]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[[20,10][1,0] as $x | def f: (100,200) as $y | def g: [$x + $y, .]; . + $x | g; f[0] | [f][0][1] | f]
+999999999
+[[110.0, 130.0], [210.0, 130.0], [110.0, 230.0], [210.0, 230.0], [120.0, 160.0], [220.0, 160.0], [120.0, 260.0], [220.0, 260.0]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+def fac: if . == 1 then 1 else . * (. - 1 | fac) end; [.[] | fac]
+[1,2,3,4]
+[1,2,6,24]
+test program: endOfInput context:[]
+[31mERROR
+[m
+reduce .[] as $x (0; . + $x)
+[1,2,4]
+7
+test program: endOfInput context:[]
+[31mERROR
+[m
+path(.foo[0,1])
+null
+["foo", 0]
+["foo", 1]
+test program: endOfInput context:[]
+[31mERROR
+[m
+path(.[] | select(.>3))
+[1,5,3]
+[1]
+test program: endOfInput context:[]
+[31mERROR
+[m
+path(.)
+42
+[]
+test program: endOfInput context:[]
+[31mERROR
+[m
+["foo",1] as $p | getpath($p), setpath($p; 20), delpaths([$p])
+{"bar": 42, "foo": ["a", "b", "c", "d"]}
+"b"
+{"bar": 42, "foo": ["a", 20, "c", "d"]}
+{"bar": 42, "foo": ["a", "c", "d"]}
+test program: endOfInput context:[]
+[31mERROR
+[m
+map(getpath([2])), map(setpath([2]; 42)), map(delpaths([[2]]))
+[[0], [0,1], [0,1,2]]
+[null, null, 2]
+[[0,null,42], [0,1,42], [0,1,42]]
+[[0], [0,1], [0,1]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+map(delpaths([[0,"foo"]]))
+[[{"foo":2, "x":1}], [{"bar":2}]]
+[[{"x":1}], [{"bar":2}]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+["foo",1] as $p | getpath($p), setpath($p; 20), delpaths([$p])
+{"bar":false}
+null
+{"bar":false, "foo": [null, 20]}
+{"bar":false}
+test program: endOfInput context:[]
+[31mERROR
+[m
+delpaths([[-200]])
+[1,2,3]
+[1,2,3]
+test program: endOfInput context:[]
+[31mERROR
+[m
+del(.), del(empty), del((.foo,.bar,.baz) | .[2,3,0]), del(.foo[0], .bar[0], .foo, .baz.bar[0].x)
+{"foo": [0,1,2,3,4], "bar": [0,1]}
+null
+{"foo": [0,1,2,3,4], "bar": [0,1]}
+{"foo": [1,4], "bar": [1]}
+{"bar": [1]}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.message = "goodbye"
+{"message": "hello"}
+{"message": "goodbye"}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.foo = .bar
+{"bar":42}
+{"foo":42, "bar":42}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.foo |= .+1
+{"foo": 42}
+{"foo": 43}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[] += 2, .[] *= 2, .[] -= 2, .[] /= 2, .[] %=2
+[1,3,5]
+[3,5,7]
+[2,6,10]
+[-1,1,3]
+[0.5, 1.5, 2.5]
+[1,1,1]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[.[] % 7]
+[-7,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,7]
+[0,-6,-5,-4,-3,-2,-1,0,1,2,3,4,5,6,0]
+[32mPASS
+[m
+.foo += .foo
+{"foo":2}
+{"foo":4}
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[0].a |= {"old":., "new":(.+1)}
+[{"a":1,"b":2}]
+[{"a":{"old":1, "new":2},"b":2}]
+test program: endOfInput context:[]
+[31mERROR
+[m
+def inc(x): x |= .+1; inc(.[].a)
+[{"a":1,"b":2},{"a":2,"b":4},{"a":7,"b":8}]
+[{"a":2,"b":2},{"a":3,"b":4},{"a":8,"b":8}]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[2][3] = 1
+[4]
+[4, null, [null, null, null, 1]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.foo[2].bar = 1
+{"foo":[11], "bar":42}
+{"foo":[11,null,{"bar":1}], "bar":42}
+test program: endOfInput context:[]
+[31mERROR
+[m
+[.[] | if .foo then "yep" else "nope" end]
+[{"foo":0},{"foo":1},{"foo":[]},{"foo":true},{"foo":false},{"foo":null},{"foo":"foo"},{}]
+["yep","yep","yep","yep","nope","nope","yep","nope"]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[.[] | if .baz then "strange" elif .foo then "yep" else "nope" end]
+[{"foo":0},{"foo":1},{"foo":[]},{"foo":true},{"foo":false},{"foo":null},{"foo":"foo"},{}]
+["yep","yep","yep","yep","nope","nope","yep","nope"]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[.[] | [.foo[] // .bar]]
+[{"foo":[1,2], "bar": 42}, {"foo":[1], "bar": null}, {"foo":[null,false,3], "bar": 18}, {"foo":[], "bar":42}, {"foo": [null,false,null], "bar": 41}]
+[[1,2], [1], [3], [42], [41]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[] //= .[0]
+["hello",true,false,[false],null]
+["hello",true,"hello",[false],"hello"]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.[] | [.[0] and .[1], .[0] or .[1]]
+[[true,[]], [false,1], [42,null], [null,false]]
+[true,true]
+[false,true]
+[false,true]
+[false,false]
+[32mPASS
+[m
+[.[] | not]
+[1,0,false,null,true,"hello"]
+[false,false,true,true,false,false]
+[32mPASS
+[m
+[10 > 0, 10 > 10, 10 > 20, 10 < 0, 10 < 10, 10 < 20]
+{}
+[true,false,false,false,false,true]
+[32mPASS
+[m
+[10 >= 0, 10 >= 10, 10 >= 20, 10 <= 0, 10 <= 10, 10 <= 20]
+{}
+[true,true,false,false,true,true]
+[32mPASS
+[m
+[ 10 == 10, 10 != 10, 10 != 11, 10 == 11]
+{}
+[true,false,true,false]
+[32mPASS
+[m
+["hello" == "hello", "hello" != "hello", "hello" == "world", "hello" != "world" ]
+{}
+[true,false,false,true]
+[32mPASS
+[m
+[[1,2,3] == [1,2,3], [1,2,3] != [1,2,3], [1,2,3] == [4,5,6], [1,2,3] != [4,5,6]]
+{}
+[true,false,false,true]
+[32mPASS
+[m
+[{"foo":42} == {"foo":42},{"foo":42} != {"foo":42}, {"foo":42} != {"bar":42}, {"foo":42} == {"bar":42}]
+{}
+[true,false,true,false]
+[32mPASS
+[m
+[{"foo":[1,2,{"bar":18},"world"]} == {"foo":[1,2,{"bar":18},"world"]},{"foo":[1,2,{"bar":18},"world"]} == {"foo":[1,2,{"bar":19},"world"]}]
+{}
+[true,false]
+[32mPASS
+[m
+[("foo" | contains("foo")), ("foobar" | contains("foo")), ("foo" | contains("foobar"))]
+{}
+[true, true, false]
+[32mPASS
+[m
+map(.[1] as $needle | .[0] | contains($needle))
+[[[],[]], [[1,2,3], [1,2]], [[1,2,3], [3,1]], [[1,2,3], [4]], [[1,2,3], [1,4]]]
+[true, true, true, false, false]
+test program: endOfInput context:[]
+[31mERROR
+[m
+map(.[1] as $needle | .[0] | contains($needle))
+[[["foobar", "foobaz"], ["baz", "bar"]], [["foobar", "foobaz"], ["foo"]], [["foobar", "foobaz"], ["blap"]]]
+[true, true, false]
+test program: endOfInput context:[]
+[31mERROR
+[m
+ERROR [({foo: 12, bar:13} | contains({foo: 12})), ({foo: 12} | contains({})), ({foo: 12, bar:13} | contains({baz:14}))]
+{}
+[true, true, false]
+test program: endOfInput context:[]
+[31mERROR
+[m
+ERROR {foo: {baz: 12, blap: {bar: 13}}, bar: 14} | contains({bar: 14, foo: {blap: {}}})
+{}
+true
+test program: endOfInput context:[]
+[31mERROR
+[m
+ERROR {foo: {baz: 12, blap: {bar: 13}}, bar: 14} | contains({bar: 14, foo: {blap: {bar: 14}}})
+{}
+false
+test program: endOfInput context:[]
+[31mERROR
+[m
+sort
+[42,[2,5,3,11],10,{"a":42,"b":2},{"a":42},true,2,[2,6],"hello",null,[2,5,6],{"a":[],"b":1},"abc","ab",[3,10],{},false,"abcd",null]
+[null,null,false,true,2,10,42,"ab","abc","abcd","hello",[2,5,3,11],[2,5,6],[2,6],[3,10],{},{"a":42},{"a":42,"b":2},{"a":[],"b":1}]
+[32mPASS
+[m
+(sort_by(.b) | sort_by(.a)), sort_by(.a, .b), sort_by(.b, .c), group_by(.b), group_by(.a + .b - .c == 2)
+[{"a": 1, "b": 4, "c": 14}, {"a": 4, "b": 1, "c": 3}, {"a": 1, "b": 4, "c": 3}, {"a": 0, "b": 2, "c": 43}]
+[{"a": 0, "b": 2, "c": 43}, {"a": 1, "b": 4, "c": 14}, {"a": 1, "b": 4, "c": 3}, {"a": 4, "b": 1, "c": 3}]
+[{"a": 0, "b": 2, "c": 43}, {"a": 1, "b": 4, "c": 14}, {"a": 1, "b": 4, "c": 3}, {"a": 4, "b": 1, "c": 3}]
+[{"a": 4, "b": 1, "c": 3}, {"a": 0, "b": 2, "c": 43}, {"a": 1, "b": 4, "c": 3}, {"a": 1, "b": 4, "c": 14}]
+[[{"a": 4, "b": 1, "c": 3}], [{"a": 0, "b": 2, "c": 43}], [{"a": 1, "b": 4, "c": 14}, {"a": 1, "b": 4, "c": 3}]]
+[[{"a": 1, "b": 4, "c": 14}, {"a": 0, "b": 2, "c": 43}], [{"a": 4, "b": 1, "c": 3}, {"a": 1, "b": 4, "c": 3}]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+unique
+[1,2,5,3,5,3,1,3]
+[1,2,3,5]
+test program: endOfInput context:[]
+[31mERROR
+[m
+unique
+[]
+[]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[min, max, min_by(.[1]), max_by(.[1]), min_by(.[2]), max_by(.[2])]
+[[4,2,"a"],[3,1,"a"],[2,4,"a"],[1,3,"a"]]
+[[1,3,"a"],[4,2,"a"],[3,1,"a"],[2,4,"a"],[4,2,"a"],[1,3,"a"]]
+test program: endOfInput context:[]
+[31mERROR
+[m
+[min,max,min_by(.),max_by(.)]
+[]
+[null,null,null,null]
+test program: endOfInput context:[]
+[31mERROR
+[m
+.foo[.baz]
+{"foo":{"bar":4},"baz":"bar"}
+4
+[32mPASS
+[m
+.[] | .error = "no, it's OK"
+[{"error":true}]
+{"error": "no, it's OK"}
+test program: endOfInput context:[]
+[31mERROR
+[m
+[{a:1}] | .[] | .a=999
+null
+{"a": 999}
+test program: endOfInput context:[]
+[31mERROR
+[m
+to_entries
+{"a": 1, "b": 2}
+[{"key":"a", "value":1}, {"key":"b", "value":2}]
+[32mPASS
+[m
+from_entries
+[{"key":"a", "value":1}, {"key":"b", "value":2}]
+{"a": 1, "b": 2}
+[32mPASS
+[m
+with_entries(.key |= "KEY_" + .)
+{"a": 1, "b": 2}
+{"KEY_a": 1, "KEY_b": 2}
+test program: endOfInput context:[]
+[31mERROR
+[m
+map(has("foo"))
+[{"foo": 42}, {}]
+[true, false]
+[32mPASS
+[m
+map(has(2))
+[[0,1], ["a","b","c"]]
+[false, true]
+[32mPASS
+[m
+keys
+[42,3,35]
+[0,1,2]
+[32mPASS
+[m
