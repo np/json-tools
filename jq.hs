@@ -1,12 +1,12 @@
 {-# LANGUAGE PatternGuards, OverloadedStrings #-}
 import Control.Applicative as A
-import Control.Arrow (first,(***))
-import Control.Monad ((<=<))
+import Control.Arrow (first,second,(***))
+import Control.Monad ((<=<),(>=>))
 import Data.Ord (comparing)
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
-import Data.List ((\\),sort,sortBy)
+import Data.List ((\\),sort,sortBy,intersperse,nub)
 import Data.Monoid
 import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
@@ -26,6 +26,8 @@ import Data.Attoparsec.Expr
 import System.Environment
 import Data.Traversable (Traversable(..),foldMapDefault)
 import Data.Foldable (Foldable(foldMap))
+import System.IO.Unsafe
+import System.Process (readProcess)
 
 type ValueOp1 = Value -> Value
 type ValueOp2 = Value -> Value -> Value
@@ -139,7 +141,7 @@ lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = T.length s
 lengthFi x          = err1 x $ \x' -> [x', "has no length"]
 
-lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, toNumberOp, toStringOp :: ValueOp1
+lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, uniqueOp, toNumberOp, toStringOp, decodeOp :: ValueOp1
 
 lengthOp = toJSON . lengthFi
 
@@ -165,6 +167,9 @@ floorOp x          = err1 x $ \x' -> [x', "cannot be floored"]
 sortOp (Array v) = Array (V.fromList . sort . V.toList $ v)
 sortOp x         = err1 x $ \x' -> [x', "cannot be sorted, as it is not an array"]
 
+uniqueOp (Array v) = Array (V.fromList . nub . sort . V.toList $ v)
+uniqueOp x         = err1 x $ \x' -> [x', "cannot be grouped, as it is not an array"]
+
 toNumberOp n@Number{} = n
 toNumberOp (String s) = either (const e) Number $ parseM "number" number (L8.pack . T.unpack $ s)
   where e = error $ "Invalid numeric literal (while parsing '" <> T.unpack s <> "'"
@@ -172,6 +177,9 @@ toNumberOp x     = err1 x $ \x' -> [x', "cannot be parsed as a number"]
 
 toStringOp s@String{} = s
 toStringOp x = String . T.pack . L8.unpack . encode $ x
+
+decodeOp (String s) = either error id . parseM "JSON value" value . L8.pack . T.unpack $ s
+decodeOp x = err1 x $ \x' -> [x',"cannot be decoded (not a string)"]
 
 at :: ValueOp2
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
@@ -221,13 +229,20 @@ objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . di
 op2VF :: ValueOp2 -> Filter -> Filter
 op2VF op f x = [ op x y | y <- f x ]
 
-op2F :: Op2 -> Filter -> Filter
-op2F Select   = selectF
-op2F Has      = op2VF (boolOp2 has)
-op2F Contains = op2VF (boolOp2 (flip contains))
+systemF :: ValueOp2
+systemF (String inp) y
+  | Success (cmd:args) <- fromJSON y =
+      unsafePerformIO . fmap (String . T.pack) . readProcess cmd args . T.unpack $ inp
+  | otherwise =
+      err1 y $ \y' -> ["system()'s second argument must be an array of strings and not a", y']
+systemF inp _ =
+  err1 inp $ \inp' -> ["system()'s first argument must be string and not", inp']
 
-op3F :: ValueOp3 -> Filter -> Filter -> Filter
-op3F op f g x = [ op x y z | z <- g x, y <- f x ]
+filterOp3 :: ValueOp3 -> Filter -> Filter -> Filter
+filterOp3 op f g x = [ op x y z | z <- g x, y <- f x ]
+
+op3F :: a -> F a -> F a -> F a
+op3F op f g = OpF op [f,g]
 
 op2to3 :: ValueOp2 -> ValueOp3
 op2to3 = const
@@ -238,44 +253,33 @@ emptyF _ = []
 constF :: Value -> Filter
 constF v _ = [v]
 
+type Name = String
+
 -- Filter
-data F = IdF             -- .
-       | CompF F F       -- f | g
-       | AllF            -- .[]
-       | BothF F F       -- f, g
-       | ArrayF F        -- [f]
-       | ObjectF (Obj F) -- {a: f, b: g}
-       | EmptyF          -- empty
-       | Op1F Op1        -- length, keys, add
-       | Op2F Op2 F      -- select(f), has(f), ...
-       | Op3F Op3 F F    -- f[g], f + g, f - g, f / g, f * g
-       | ConstF Value    -- 1, "foo", null
-       | ErrorF String
+data F a
+  = IdF                 -- .
+  | CompF (F a) (F a)   -- f | g
+  | AllF                -- .[]
+  | BothF (F a) (F a)   -- f, g
+  | ArrayF (F a)        -- [f]
+  | ObjectF (Obj (F a)) -- {a: f, b: g}
+  | OpF a [F a]         -- F, F(f₀;...;fn)
+  | ConstF Value        -- 1, "foo", null
+  | ErrorF String
   deriving (Show)
 
-data Op1 = Length | Keys | Add | Type | Min | Max | ToEntries
-         | ToNumber | ToString | Negate | Floor | Sqrt | Sort
-         | Not
-  deriving (Show)
+type F' = F Name
 
-data Op2 = Has | Select | Contains
-  deriving (Show)
-
-data Op3 = Plus | Minus | Times | Div | Mod
-         | LT | LE | EQ | NE | GT | GE
-         | And | Or | At
-  deriving (Show)
-
-keyF :: Text -> F
+keyF :: Text -> F a
 keyF = ConstF . String
 
--- .key
-atKeyF :: Text -> F
-atKeyF = Op3F At IdF . keyF
+-- f[g]
+atF :: F' -> F' -> F'
+atF = op3F "_at"
 
--- def map(f): [.[] | f];
-mapF :: F -> F
-mapF f = ArrayF (AllF `CompF` f)
+-- .key
+atKeyF :: Text -> F'
+atKeyF = atF IdF . keyF
 
 trueValue :: Value -> Bool
 trueValue (Bool b) = b
@@ -285,7 +289,7 @@ trueValue _        = True
 selectF :: Filter -> Filter
 selectF f x = [x | any trueValue (f x)]
 
-concatF, composeF :: [F] -> F
+concatF, composeF :: [F a] -> F a
 
 concatF [] = IdF
 concatF xs = foldr1 BothF xs
@@ -307,13 +311,28 @@ toEntriesOp (Object o) = toEntries . fmap (first String) . H.toList $ o
 toEntriesOp (Array  v) = toEntries . zip (fmap (Number . I) [0..]) . V.toList $ v
 toEntriesOp x = err1 x $ \x' -> [x', "has no keys"]
 
-fromEntriesF :: F
+fromEntriesF :: F'
 fromEntriesF = parseF "map({(.key): .value}) | add"
 
 {-
---withEntriesF :: F -> F
---withEntriesF = `CompF` toEntriesOp
+subst :: (a -> [F b] -> F b) -> F a -> F b
+subst _   IdF           = IdF
+subst env (CompF f g)   = CompF (subst env f) (subst env g)
+subst _   AllF          = AllF
+subst env (BothF f g)   = BothF (subst env f) (subst env g)
+subst env (ArrayF f)    = ArrayF (subst env f)
+subst env (ObjectF o)   = ObjectF (fmap (subst env) o)
+subst env (OpF op fs)   = env op (fmap (subst env) fs)
+subst _   (ConstF v)    = ConstF v
+subst _   (ErrorF msg)  = ErrorF msg
+-}
 
+filterF2 :: String -> String -> Filter -> Filter
+filterF2 nmf sf f = filter env (parseF sf)
+  where env nm [] | nm == nmf = f
+        env nm fs             = filterOp nm fs
+
+{-
 data Def = Def { name :: Text, params :: [Text], body :: F }
 
 paramsP :: Parser [Text]
@@ -326,70 +345,107 @@ definitionP = Def <$ string "def" <*> bareWord <*> paramsP <* tok ':' <*> parseF
            <?> "definition"
 -}
 
-valueOp1 :: Op1 -> ValueOp1
-valueOp1 Keys      = keysOp
-valueOp1 Length    = lengthOp
-valueOp1 Add       = addOp
-valueOp1 Min       = minimum . toList
-valueOp1 Max       = minimum . toList
-valueOp1 Type      = String . T.pack . show . kindOf
-valueOp1 ToEntries = toEntriesOp
-valueOp1 Negate    = negateOp
-valueOp1 Sqrt      = sqrtOp
-valueOp1 Floor     = floorOp
-valueOp1 Sort      = sortOp
-valueOp1 ToNumber  = toNumberOp
-valueOp1 ToString  = toStringOp
-valueOp1 Not       = Bool . not . trueValue
+filterOp1 :: Name -> Filter
+filterOp1 = lookupOp tbl 1 where
+  tbl = H.fromList . (tbl' ++) $
+          [("empty"         , emptyF)
+          ,("from_entries"  , filter filterOp fromEntriesF)]
 
-valueOp3 :: Op3 -> ValueOp3
-valueOp3 = op2to3 . valueOp3need2
+  tbl' = map (second (pure .))
+          [("keys"          , keysOp)
+          ,("length"        , lengthOp)
+          ,("add"           , addOp)
+          ,("min"           , minimum . toList)
+          ,("max"           , minimum . toList)
+          ,("type"          , String . T.pack . show . kindOf)
+          ,("to_entries"    , toEntriesOp)
+          ,("negate"        , negateOp)
+          ,("_negate"       , negateOp)
+          ,("sqrt"          , sqrtOp)
+          ,("_sqrt"         , sqrtOp)
+          ,("floor"         , floorOp)
+          ,("_floor"        , floorOp)
+          ,("sort"          , sortOp)
+          ,("tonumber"      , toNumberOp)
+          ,("tostring"      , toStringOp)
+          ,("encode"        , toJSON . encode)
+          ,("decode"        , decodeOp)
+          ,("not"           , Bool . not . trueValue)
+          ,("unique"        , uniqueOp)
+          ]
 
-valueOp3need2 :: Op3 -> ValueOp2
-valueOp3need2 Plus  = (+|)
-valueOp3need2 Times = (*|)
-valueOp3need2 Minus = (-|)
-valueOp3need2 Div   = (/|)
-valueOp3need2 Mod   = (%|)
-valueOp3need2 LT    = boolOp2 (<)
-valueOp3need2 LE    = boolOp2 (<=)
-valueOp3need2 GE    = boolOp2 (>=)
-valueOp3need2 GT    = boolOp2 (>)
-valueOp3need2 EQ    = boolOp2 (==)
-valueOp3need2 NE    = boolOp2 (/=)
-valueOp3need2 And   = boolOp2' (&&)
-valueOp3need2 Or    = boolOp2' (||)
-valueOp3need2 At    = at
+filterOp2 :: Name -> Filter -> Filter
+filterOp2 = lookupOp tbl 2
+  where tbl = H.fromList
+          [("select"      , selectF)
+          ,("has"         , op2VF (boolOp2 has))
+          ,("contains"    , op2VF (boolOp2 (flip contains)))
+          ,("system"      , op2VF systemF)
+          ,("map"         , filterF2 "f" "[.[] | f]") -- def map(f): [.[] | f];
+          ,("jsystem"     , filterF2 "f" "encode | system(f) | decode")
+          ,("with_entries", filterF2 "f" "to_entries | map(f) | from_entries") -- "def with_entries(f): to_entries | map(f) | from_entries;"
+          ]
 
-filter :: F -> Filter
-filter IdF           = pure
-filter (CompF f g)   = concatMap (filter g) . filter f
-filter AllF          = toList
-filter (BothF f g)   = bothF (filter f) (filter g)
-filter (ArrayF f)    = arrayF (filter f)
-filter (ObjectF o)   = objectF (fmap filter o)
-filter (Op1F op)     = pure . valueOp1 op
-filter (Op2F op f)   = op2F op (filter f)
-filter (Op3F op f g) = op3F (valueOp3 op) (filter f) (filter g)
-filter EmptyF        = emptyF
-filter (ConstF v)    = constF v
-filter (ErrorF msg)  = error msg
+unknown :: Int -> Name -> a
+unknown a nm = error $ nm ++ " is not defined (arity " ++ show a ++ ")"
+
+lookupOp :: HashMap Name a -> Int -> Name -> a
+lookupOp tbl a nm = fromMaybe (unknown a nm) (H.lookup nm tbl)
+
+valueOp3 :: Name -> ValueOp3
+valueOp3 = lookupOp tbl 3 where
+  tbl = H.fromList . map (second op2to3) $
+            [("_plus"      , (+|))
+            ,("_multiply"  , (*|))
+            ,("_minus"     , (-|))
+            ,("_divide"    , (/|))
+            ,("_mod"       , (%|))
+            ,("_less"      , boolOp2 (<))
+            ,("_lesseq"    , boolOp2 (<=))
+            ,("_greatereq" , boolOp2 (>=))
+            ,("_greater"   , boolOp2 (>))
+            ,("_equal"     , boolOp2 (==))
+            ,("_notequal"  , boolOp2 (/=))
+            ,("_and"       , boolOp2' (&&))
+            ,("_or"        , boolOp2' (||))
+            ,("_at"        , at)
+            ]
+
+filterOp :: Name -> [Filter] -> Filter
+filterOp nm []     = filterOp1 nm
+filterOp nm [f]    = filterOp2 nm f
+filterOp nm [f,g]  = filterOp3 (valueOp3 nm) f g
+filterOp nm fs     = unknown (length fs) nm
+
+filter :: (a -> [Filter] -> Filter) -> F a -> Filter
+filter _   IdF           = pure
+filter env (CompF f g)   = filter env f >=> filter env g
+filter _   AllF          = toList
+filter env (BothF f g)   = bothF (filter env f) (filter env g)
+filter env (ArrayF f)    = arrayF (filter env f)
+filter env (ObjectF o)   = objectF (fmap (filter env) o)
+filter env (OpF op fs)   = env op (fmap (filter env) fs)
+filter _   (ConstF v)    = constF v
+filter _   (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
-  parseNoCommaFilter, parseFilter, parseDotFilter, parseConcFilter :: Parser F
+  parseNoCommaFilter, parseFilter, parseDotFilter, parseConcFilter :: Parser F'
 
 parseDotFilter =
    parseAtFilters =<< (atKeyF <$> (skipSpace *> (bareWord <|> jstring)) <|> pure IdF)
   <?> "dot filter"
 
-parseAtFilters :: F -> Parser F
+parseAtFilters :: F' -> Parser F'
 parseAtFilters f =
   do g <-    f `CompF` AllF <$  (skipSpace *> string "[]")
-         <|> Op3F At f    <$> (tok '[' *> parseFilter <* tok ']')
+         <|> atF f <$> (tok '[' *> parseFilter <* tok ']')
          <|> pure IdF
      case g of
        IdF -> return f
        _   -> parseAtFilters g
+
+ident :: Parser String
+ident = some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
 
 bareWord :: Parser Text
 bareWord = T.pack <$> some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
@@ -406,58 +462,14 @@ parseOp0
   <|> Object mempty <$  string "{}"
   <?> "arity 0 operator (\"a\", 42, true, null, [], {}, ...)"
 
-parseOp1 :: Parser F
-parseOp1
-   =  Op1F Length <$ string "length"
-  <|> Op1F Keys   <$ string "keys"
-  <|> Op1F Add    <$ string "add"
-  <|> Op1F Type   <$ string "type"
-  <|> Op1F Min    <$ string "min"
-  <|> Op1F Max    <$ string "max"
-  <|> Op1F ToEntries <$ string "to_entries"
-  <|> fromEntriesF <$ string "from_entries"
-  <|> Op1F Negate <$ (string "negate" <|> string "_negate")
-  <|> Op1F Sqrt   <$ (string "sqrt"  <|> string "_sqrt")
-  <|> Op1F Floor  <$ (string "floor" <|> string "_floor")
-  <|> Op1F Sort   <$ string "sort"
-  <|> Op1F ToNumber <$ string "tonumber"
-  <|> Op1F ToString <$ string "tostring"
-  <|> Op1F Not    <$ string "not"
-  <?> "arity 1 operator (length, keys, add, ...)"
-
-parseOp2 :: Parser (F -> F)
-parseOp2
-   =  Op2F Select   <$ string "select"
-  <|> mapF          <$ string "map"
-  <|> Op2F Has      <$ string "has"
-  <|> Op2F Contains <$ string "contains"
-  <?> "arity 2 operator (select, map, has, contains)"
-
-parseOp3 :: Parser (F -> F -> F)
-parseOp3 =  Op3F Plus  <$ string "_plus"
-        <|> Op3F Minus <$ string "_minus"
-        <|> Op3F Times <$ string "_multiply"
-        <|> Op3F Div   <$ string "_divide"
-        <|> Op3F Mod   <$ string "_mod"
-        <|> Op3F EQ    <$ string "_equal"
-        <|> Op3F NE    <$ string "_notequal"
-        <|> Op3F LT    <$ string "_less"
-        <|> Op3F GT    <$ string "_greater"
-        <|> Op3F LE    <$ string "_lesseq"
-        <|> Op3F GE    <$ string "_greatereq"
-        <?> "arity 3 operator (_plus, _minus...)"
-
 tok :: Char -> Parser Char
 tok c = skipSpace *> char c
 
 parseSimpleFilter
   =  skipSpace *>
   (  composeF <$> many1 (char '.'  *> parseDotFilter)
- <|> EmptyF   <$  string "empty"
  <|> ConstF   <$> parseOp0
- <|> parseOp1
- <|> parseOp2 <*  tok  '(' <*> parseFilter <* tok ')'
- <|> parseOp3 <*  tok  '(' <*> parseFilter <* tok ';' <*> parseFilter <* tok ')'
+ <|> OpF      <$> ident <*> (tok '(' *> parseFilter `sepBy` tok ';' <* tok ')' <|> pure [])
  <|> ArrayF   <$  char '[' <*> parseFilter <* tok ']'
  <|> ObjectF  <$> objectFilterP
  <|> char '('  *> parseFilter <* tok ')'
@@ -467,16 +479,17 @@ parseSimpleFilter
 parseConcFilter = parseAtFilters =<< parseSimpleFilter
                <?> "conc filter"
 
-table :: [[Operator B.ByteString F]]
-table   = [ [binary op AssocLeft | op <- [("*",Times),("/",Div),("%",Mod)]]
-          , [binary op AssocLeft | op <- [("+",Plus),("-",Minus)]]
-          , [binary op AssocNone | op <- [("<=",LE),("<",LT),("==",EQ),("!=",NE),(">=",GE),(">",GT)]]
-          , [binary ("and",And) AssocRight]
-          , [binary ("or",Or) AssocRight]
+table :: [[Operator B.ByteString F']]
+table   = [ [binary op AssocLeft | op <- [("*","_multiply"),("/","_divide"),("%","_mod")]]
+          , [binary op AssocLeft | op <- [("+","_plus"),("-","_minus")]]
+          , [binary op AssocNone | op <- [("<=","_lesseq"),("<","_less"),("==","_equal")
+                                         ,("!=","_notequal"),(">=","_greatereq"),(">","_greater")]]
+          , [binary ("and","_and") AssocRight]
+          , [binary ("or","_or") AssocRight]
           ]
 
-binary :: (B.ByteString, Op3) -> Assoc -> Operator B.ByteString F
-binary (name, fun) = Infix (Op3F fun <$ skipSpace <* string name)
+binary :: (B.ByteString, Name) -> Assoc -> Operator B.ByteString F'
+binary (name, fun) = Infix (op3F fun <$ skipSpace <* string name)
 
 parseOpFilter = buildExpressionParser table parseConcFilter
              <?> "op filter"
@@ -490,7 +503,7 @@ parseNoCommaFilter = composeF <$> parseOpFilter `sepBy` tok '|'
 parseFilter = composeF <$> parseCommaFilter `sepBy1` tok '|'
            <?> "filter"
 
-objectFilterP :: Parser (Obj F)
+objectFilterP :: Parser (Obj F')
 objectFilterP = Obj
              <$> (char '{' *> skipSpace *>
                  ((pair <* skipSpace) `sepBy` (char ',' *> skipSpace))
@@ -502,7 +515,7 @@ objectFilterP = Obj
          pair =  (,)  <$> (keyFilterP <* skipSpace) <*> (char ':' *> skipSpace *> parseNoCommaFilter)
              <|> fill <$> bareWord
 
-parseF :: String -> F
+parseF :: String -> F'
 parseF = either error id . parseM "filter" parseFilter . L8.pack
 
 parseM :: String -> Parser a -> L.ByteString -> Either String a
@@ -524,30 +537,30 @@ readInput :: Bool -> IO [Value]
 readInput True = return [Null]
 readInput _    = parseIO "JSON decoding" stream =<< L.getContents
 
-mainFilter :: Bool -> String -> IO ()
-mainFilter noinput arg = do
+mainFilter :: Bool -> Bool -> String -> IO ()
+mainFilter wrap_output noinput arg = do
   f <- parseIO "parsing filter" parseFilter (L8.pack arg)
   -- print f
   input <- readInput noinput
-  mapM_ (L8.putStrLn . encode) $ concatMap (filter f) input
+  mapM_ (outputValue wrap_output) $ concatMap (filter filterOp f) input
 
 type TestCase = (L.ByteString,L.ByteString,[L.ByteString])
 
-parseTestCase :: TestCase -> Either String (F,Value,[Value])
+parseTestCase :: TestCase -> Either String (F',Value,[Value])
 parseTestCase (prg,inp,out) =
    (,,) <$> parseM "test program" parseFilter prg
         <*> parseM "test input"   value       inp
         <*> parseM "test output"  stream      (L8.unwords out)
 
-runTest :: Either String (F, Value, [Value]) -> IO ()
+runTest :: Either String (F', Value, [Value]) -> IO ()
 runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
 runTest (Right {-test@-}(f, input, reference)) =
-  let output = filter f input in
+  let output = filter filterOp f input in
   if output == reference then
     {-print test >>-} putStrLn (color 32 "PASS\n")
   else do
     putStrLn "was expected, but instead this is the output"
-    mapM_ (L8.putStrLn . encode) output
+    mapM_ (outputValue False) output
     putStrLn (color 31 "FAIL\n")
 
 color :: Int -> String -> String
@@ -579,11 +592,22 @@ dropComment s
   | "#" `L.isPrefixOf` s = L.empty
   | otherwise            = s
 
+outputValue :: Bool -> Value -> IO ()
+outputValue False = L8.putStrLn . encode
+outputValue True  = mapM_ L.putStr . ($["\n"]) . f
+  where f (Array a)   = t"[" . cat (intersperse (t"\n,") (map j . V.toList $ a)) . t"]"
+        f (Object o)  = t"{" . cat (intersperse (t"\n,") (map g . H.toList $ o)) . t"}"
+        f x           = j x
+        g (key, val)  = t (encode key) . t(L8.pack ":") . j val
+        j             = t . encode
+        t x           = (x:)
+        cat           = appEndo . mconcat . map Endo
+
 main :: IO ()
 main = do args <- getArgs
           if "--run-tests" `elem` args then
             runTests
             else do
               -- -c is ignored
-              let [arg] = args \\ ["-n","-c","--run-tests"]
-              mainFilter ("-n" `elem` args) arg
+              let [arg] = args \\ ["-n","-c","--run-tests","-w"]
+              mainFilter ("-w" `elem` args) ("-n" `elem` args) arg
