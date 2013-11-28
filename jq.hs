@@ -51,6 +51,9 @@ instance Foldable Obj where
 data Kind = KNull | KNumber | KString | KBool | KArray | KObject
   deriving (Eq)
 
+kinds :: [Kind]
+kinds = [KNull, KNumber, KString, KBool, KArray, KObject]
+
 instance Show Kind where
   show KNull = "null"
   show KNumber = "number"
@@ -73,8 +76,22 @@ err = error . unwords
 err2 :: Value -> Value -> (String -> String -> [String]) -> a
 err2 x y msg = err (msg (show (kindOf x)) (show (kindOf y)))
 
+err3 :: Value -> Value -> Value -> (String -> String -> String -> [String]) -> a
+err3 x y z msg = err (msg (show (kindOf x)) (show (kindOf y)) (show (kindOf z)))
+
 err1 :: Value -> (String -> [String]) -> a
 err1 x msg = err (msg (show (kindOf x)))
+
+errK :: String -> [(Value,[Kind])] -> a
+errK nm vks =
+  err . head $
+        [ "cannot call" : nm : "since argument" :
+          show i : "is a" : show kv :
+          "and not a" : intersperse "or a" (map show ks)
+        | (i,(v,ks)) <- zip [1::Int ..] vks
+        , let kv = kindOf v
+        , kv `notElem` ks
+        ]
 
 vecDiff :: Vector Value -> Vector Value -> Vector Value
 x `vecDiff` y = V.filter p x
@@ -141,7 +158,9 @@ lengthFi (Object o) = length . H.toList $ o
 lengthFi (String s) = T.length s
 lengthFi x          = err1 x $ \x' -> [x', "has no length"]
 
-lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp, uniqueOp, toNumberOp, toStringOp, decodeOp :: ValueOp1
+lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp,
+  uniqueOp, toNumberOp, toStringOp, decodeOp, linesOp, unlinesOp,
+  wordsOp, unwordsOp, tailOp, initOp, reverseOp :: ValueOp1
 
 lengthOp = toJSON . lengthFi
 
@@ -179,9 +198,62 @@ toStringOp s@String{} = s
 toStringOp x = String . T.pack . L8.unpack . encode $ x
 
 decodeOp (String s) = either error id . parseM "JSON value" value . L8.pack . T.unpack $ s
-decodeOp x = err1 x $ \x' -> [x',"cannot be decoded (not a string)"]
+decodeOp x = errK "decode" [(x,[KString])]
 
-at :: ValueOp2
+linesOp (String s) = Array (V.fromList . map String . T.lines $ s)
+linesOp x = errK "lines" [(x,[KString])]
+
+unlinesOp (Array v) = String (T.unlines . map fromString . V.toList $ v)
+unlinesOp x = err1 x $ \x' -> ["cannot take unlines of", x', "(not an array of string)"]
+
+wordsOp (String s) = Array (V.fromList . map String . T.words $ s)
+wordsOp x = errK "words" [(x,[KString])]
+
+unwordsOp (Array v) = String (T.unwords . map fromString . V.toList $ v)
+unwordsOp x = err1 x $ \x' -> ["cannot take unwords of", x', "(not an array of string)"]
+
+tailOp (String s) = String (T.tail s)
+tailOp (Array  v) = Array  (V.tail v)
+tailOp x = errK "tail" [(x,[KString,KArray])]
+
+initOp (String s) = String (T.init s)
+initOp (Array  v) = Array  (V.init v)
+initOp x = errK "init" [(x,[KString,KArray])]
+
+reverseOp (String s) = String (T.reverse s)
+reverseOp (Array  v) = Array  (V.reverse v)
+reverseOp x = errK "reverse" [(x,[KString,KArray])]
+
+fromString :: Value -> Text
+fromString (String s) = s
+fromString x          = err1 x $ \x' -> [x', "is not a string"]
+
+endoTextOp :: String -> (T.Text -> T.Text) -> ValueOp1
+endoTextOp _    textOp (String s) = String (textOp s)
+endoTextOp name _      x          = errK name [(x,[KString])]
+
+at, systemOp, intercalateOp, intersperseOp, splitOp, chunksOp, takeOp, dropOp :: ValueOp2
+
+intercalateOp (String s) (Array v) = String . T.intercalate s . map fromString . V.toList $ v
+intercalateOp x y = errK "intercalate" [(x,[KString]),(y,[KArray])]
+
+intersperseOp x (Array v) = Array . V.fromList . intersperse x . V.toList $ v
+intersperseOp x y = errK "intersperse" [(x,kinds),(y,[KArray])]
+
+splitOp (String x) (String y) = toJSON $ T.splitOn x y
+splitOp x y = errK "split" [(x,[KString]),(y,[KString])]
+
+chunksOp (Number (I n)) (String s) = toJSON $ T.chunksOf (fromInteger n) s
+chunksOp x y = errK "chunks" [(x,[KNumber]),(y,[KString])]
+
+takeOp (Number (I n)) (String s) = String (T.take (fromInteger n) s)
+takeOp (Number (I n)) (Array  v) = Array  (V.take (fromInteger n) v)
+takeOp x y = errK "take" [(x,[KNumber]),(y,[KString,KArray])]
+
+dropOp (Number (I n)) (String s) = String (T.drop (fromInteger n) s)
+dropOp (Number (I n)) (Array  v) = Array  (V.drop (fromInteger n) v)
+dropOp x y = errK "drop" [(x,[KNumber]),(y,[KString,KArray])]
+
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
 Array  a `at` Number (I n) = fromMaybe Null $ a V.!? fromInteger n
 Array  a `at` Number (D d) = fromMaybe Null $ a V.!? floor d
@@ -227,16 +299,17 @@ objectF :: Obj Filter -> Filter
 objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($x) $ o
 
 op2VF :: ValueOp2 -> Filter -> Filter
-op2VF op f x = [ op x y | y <- f x ]
+op2VF op f inp = [ op x inp | x <- f inp ]
 
-systemF :: ValueOp2
-systemF (String inp) y
-  | Success (cmd:args) <- fromJSON y =
+systemOp cmdargs (String inp)
+  | Success (cmd:args) <- fromJSON cmdargs =
+      -- Yes I am ashamed!
       unsafePerformIO . fmap (String . T.pack) . readProcess cmd args . T.unpack $ inp
   | otherwise =
-      err1 y $ \y' -> ["system()'s second argument must be an array of strings and not a", y']
-systemF inp _ =
-  err1 inp $ \inp' -> ["system()'s first argument must be string and not", inp']
+      err1 cmdargs $ \cmdargs' -> ["system()'s second argument must be an array of strings and not a", cmdargs']
+systemOp _cmdargs inp =
+  err1 inp $ \inp' -> ["system()'s input must be a string and not a", inp']
+  -- errK "system" [(inp,[KString])]
 
 filterOp3 :: ValueOp3 -> Filter -> Filter -> Filter
 filterOp3 op f g x = [ op x y z | z <- g x, y <- f x ]
@@ -368,22 +441,50 @@ filterOp1 = lookupOp tbl 1 where
           ,("sort"          , sortOp)
           ,("tonumber"      , toNumberOp)
           ,("tostring"      , toStringOp)
-          ,("encode"        , toJSON . encode)
-          ,("decode"        , decodeOp)
           ,("not"           , Bool . not . trueValue)
           ,("unique"        , uniqueOp)
+          -- NP extensions
+          ,("encode"        , toJSON . encode)
+          ,("decode"        , decodeOp)
+          ,("lines"         , linesOp)
+          ,("unlines"       , unlinesOp)
+          ,("words"         , wordsOp)
+          ,("unwords"       , unwordsOp)
+          ,("init"          , initOp)
+          ,("tail"          , tailOp)
+          ,("reverse"       , reverseOp)
+          ,("casefold"      , endoTextOp "casefold"  T.toCaseFold)
+          ,("lowercase"     , endoTextOp "lowercase" T.toLower)
+          ,("uppercase"     , endoTextOp "uppercase" T.toUpper)
+          ,("strip"         , endoTextOp "strip"     T.strip)
+          ,("rstrip"        , endoTextOp "rstrip"    T.stripEnd)
+          ,("lstrip"        , endoTextOp "lstrip"    T.stripStart)
+  -- Arrays and String:
+  --   null
+  -- Text:
+  --   isPrefixOf :: Text -> Text -> Bool
+  --   isSuffixOf :: Text -> Text -> Bool
+  --   isInfixOf :: Text -> Text -> Bool
           ]
 
 filterOp2 :: Name -> Filter -> Filter
 filterOp2 = lookupOp tbl 2
   where tbl = H.fromList
           [("select"      , selectF)
-          ,("has"         , op2VF (boolOp2 has))
-          ,("contains"    , op2VF (boolOp2 (flip contains)))
-          ,("system"      , op2VF systemF)
+          ,("has"         , op2VF (boolOp2 (flip has)))
+          ,("contains"    , op2VF (boolOp2 contains))
           ,("map"         , filterF2 "f" "[.[] | f]") -- def map(f): [.[] | f];
-          ,("jsystem"     , filterF2 "f" "encode | system(f) | decode")
           ,("with_entries", filterF2 "f" "to_entries | map(f) | from_entries") -- "def with_entries(f): to_entries | map(f) | from_entries;"
+          -- NP extensions
+          ,("system"      , op2VF systemOp)
+          ,("intercalate" , op2VF intercalateOp)
+          ,("intersperse" , op2VF intersperseOp)
+          ,("split"       , op2VF splitOp)
+          ,("chunks"      , op2VF chunksOp)
+          ,("take"        , op2VF takeOp)
+          ,("drop"        , op2VF dropOp)
+          -- NP definitions
+          ,("jsystem"     , filterF2 "f" "encode | system(f) | decode")
           ]
 
 unknown :: Int -> Name -> a
@@ -392,9 +493,15 @@ unknown a nm = error $ nm ++ " is not defined (arity " ++ show a ++ ")"
 lookupOp :: HashMap Name a -> Int -> Name -> a
 lookupOp tbl a nm = fromMaybe (unknown a nm) (H.lookup nm tbl)
 
+replaceOp :: ValueOp3
+replaceOp (String x) (String y) (String z) = String (T.replace y z x)
+replaceOp x y z = err3 x y z $ \x' y' z' -> ["replace expects 3 string arguments not", x', y', z']
+
 valueOp3 :: Name -> ValueOp3
 valueOp3 = lookupOp tbl 3 where
-  tbl = H.fromList . map (second op2to3) $
+  tbl = H.fromList $
+            [("replace"    , replaceOp)]
+         ++ map (second op2to3)
             [("_plus"      , (+|))
             ,("_multiply"  , (*|))
             ,("_minus"     , (-|))
@@ -445,10 +552,12 @@ parseAtFilters f =
        _   -> parseAtFilters g
 
 ident :: Parser String
-ident = some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
+ident = (:) <$> satisfy lic <*> many (satisfy ic)
+  where lic c = c == '_' || isAscii c && isAlpha c
+        ic  c = c == '_' || isAscii c && isAlphaNum c
 
 bareWord :: Parser Text
-bareWord = T.pack <$> some (satisfy (\c -> c == '_' || isAscii c && isAlpha c))
+bareWord = T.pack <$> ident
         <?> "bare word"
 
 parseOp0 :: Parser Value
