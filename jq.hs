@@ -650,12 +650,12 @@ readInput :: Bool -> IO [Value]
 readInput True = return [Null]
 readInput _    = parseIO "JSON decoding" stream =<< L.getContents
 
-mainFilter :: Bool -> Bool -> String -> IO ()
-mainFilter wrap_output noinput arg = do
+mainFilter :: Bool -> Bool -> Bool -> String -> IO ()
+mainFilter wrap_output noinput raw_output arg = do
   f <- parseIO "parsing filter" parseFilter (L8.pack arg)
   -- print f
   input <- readInput noinput
-  mapM_ (outputValue wrap_output) $ concatMap (filter filterOp f) input
+  mapM_ (outputValue wrap_output raw_output) $ concatMap (filter filterOp f) input
 
 type TestCase = (L.ByteString,L.ByteString,[L.ByteString])
 
@@ -673,7 +673,7 @@ runTest (Right {-test@-}(f, input, reference)) =
     {-print test >>-} putStrLn (color 32 "PASS\n")
   else do
     putStrLn "was expected, but instead this is the output"
-    mapM_ (outputValue False) output
+    mapM_ (outputValue False False) output
     putStrLn (color 31 "FAIL\n")
 
 color :: Int -> String -> String
@@ -705,12 +705,16 @@ dropComment s
   | "#" `L.isPrefixOf` s = L.empty
   | otherwise            = s
 
-outputValue :: Bool -> Value -> IO ()
-outputValue False = L8.putStrLn . encode
-outputValue True  = mapM_ L.putStr . ($["\n"]) . f
+encodeValue :: Bool -> Value -> L.ByteString
+encodeValue True (String s) = cs s
+encodeValue _    v          = encode v
+
+outputValue :: Bool -> Bool -> Value -> IO ()
+outputValue False raw_output = L8.putStrLn . encodeValue raw_output
+outputValue True  raw_output = mapM_ L.putStr . ($["\n"]) . f
   where f (Array a)   = t"[" . cat (intersperse (t"\n,") (map j . V.toList $ a)) . t"]"
         f (Object o)  = t"{" . cat (intersperse (t"\n,") (map g . H.toList $ o)) . t"}"
-        f x           = j x
+        f v           = t $ encodeValue raw_output v
         g (key, val)  = t (encode key) . t(L8.pack ":") . j val
         j             = t . encode
         t x           = (x:)
@@ -722,5 +726,7 @@ main = do args <- getArgs
             runTests
             else do
               -- -c is ignored
-              let [arg] = args \\ ["-n","-c","--run-tests","-w"]
-              mainFilter ("-w" `elem` args) ("-n" `elem` args) arg
+              let [arg] = args \\ ["-n","-r","--raw-output","-c","--run-tests","-w"]
+              mainFilter ("-w" `elem` args) ("-n" `elem` args)
+                         ("-r" `elem` args || "--raw-output" `elem` args)
+                         arg
