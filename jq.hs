@@ -13,6 +13,7 @@ import Data.Aeson.Parser (jstring, value)
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
 import Data.Scientific hiding (scientific)
+import Data.String.Conversions (cs)
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.ByteString as B
@@ -185,14 +186,14 @@ uniqueOp (Array v) = Array (V.fromList . nub . sort . V.toList $ v)
 uniqueOp x         = err1 x $ \x' -> [x', "cannot be grouped, as it is not an array"]
 
 toNumberOp n@Number{} = n
-toNumberOp (String s) = either (const e) Number $ parseM "number" scientific (L8.pack . T.unpack $ s)
+toNumberOp (String s) = either (const e) Number $ parseM "number" scientific (cs s)
   where e = error $ "Invalid numeric literal (while parsing '" <> T.unpack s <> "'"
 toNumberOp x     = err1 x $ \x' -> [x', "cannot be parsed as a number"]
 
 toStringOp s@String{} = s
-toStringOp x = String . T.pack . L8.unpack . encode $ x
+toStringOp x = String . cs . encode $ x
 
-decodeOp (String s) = either error id . parseM "JSON value" value . L8.pack . T.unpack $ s
+decodeOp (String s) = either error id . parseM "JSON value" value . cs $ s
 decodeOp x = errK "decode" [(x,[KString])]
 
 linesOp (String s) = Array (V.fromList . map String . T.lines $ s)
@@ -437,7 +438,7 @@ filterOp1 = lookupOp tbl 1 where
           ,("not"           , Bool . not . trueValue)
           ,("unique"        , uniqueOp)
           -- NP extensions
-          ,("encode"        , toJSON . encode)
+          ,("encode"        , String . cs . encode)
           ,("decode"        , decodeOp)
           ,("lines"         , linesOp)
           ,("unlines"       , unlinesOp)

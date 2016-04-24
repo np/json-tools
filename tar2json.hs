@@ -1,6 +1,7 @@
 import Codec.Archive.Tar as Tar
 import qualified Data.HashMap.Strict as HM
 import qualified Data.Aeson as Aeson
+import Data.String.Conversions (cs)
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L
 import System.IO
@@ -19,7 +20,7 @@ tar2json es0 = Aeson.Object $ HM.fromList [(k,v) | (k,Just v) <- entries es0] wh
   path = T.pack . entryPath
 
   contents :: Tar.Entry -> Maybe Aeson.Value
-  contents = fmap Aeson.toJSON . f . entryContent where
+  contents = fmap (Aeson.String . cs) . f . entryContent where
     f (NormalFile s _) = Just s
     f _                = Nothing
 

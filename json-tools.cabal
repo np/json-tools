@@ -63,7 +63,7 @@ executable json-xargs
 executable tar2json
     main-is: tar2json.hs
     Build-depends: base>=3&&<5, bytestring, aeson, unordered-containers,
-                   text, tar>=0.4.0
+                   text, tar>=0.4.0, string-conversions
     ghc-options: -Wall -Odph
 
 executable json-quote
@@ -75,7 +75,7 @@ executable hjq
     main-is: jq.hs
     Build-depends: base>=3&&<5, aeson, text, attoparsec, attoparsec-expr,
                    unordered-containers, vector, bytestring, process,
-                   scientific
+                   scientific, string-conversions
     ghc-options: -Wall
 
 source-repository head
