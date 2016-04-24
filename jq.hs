@@ -3,6 +3,7 @@
 import Control.Applicative as A
 import Control.Arrow (first,second,(***))
 import Control.Monad ((<=<),(>=>))
+import Control.Exception (evaluate, try, SomeException)
 import Data.Ord (comparing)
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
@@ -23,7 +24,7 @@ import qualified Data.ByteString.Lazy.Char8 as L8
 import qualified Data.Vector as V
 import Data.Vector (Vector)
 import qualified Data.HashSet as S
-import Data.Attoparsec.ByteString.Char8 hiding (Result, parse)
+import Data.Attoparsec.ByteString.Char8 hiding (Result, parse, try)
 import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
@@ -671,14 +672,22 @@ parseTestCase (prg,inp,out) =
 
 runTest :: Either String (F', Value, [Value]) -> IO ()
 runTest (Left msg) = putStrLn msg >> putStrLn (color 31 "ERROR\n")
-runTest (Right {-test@-}(f, input, reference)) =
-  let output = filter filterOp f input in
-  if output == reference then
-    {-print test >>-} putStrLn (color 32 "PASS\n")
-  else do
-    putStrLn "was expected, but instead this is the output"
-    mapM_ (outputValue False False) output
-    putStrLn (color 31 "FAIL\n")
+runTest (Right {-test@-}(f, input, reference)) = do
+  let output  = filter filterOp f input
+      encoded = encode <$> output
+  result <- try $ evaluate (sum (L8.length <$> encoded) `seq` ())
+  case result of
+    Right ()
+      | output == reference ->
+          {-print test >>-} putStrLn (color 32 "PASS\n")
+      | otherwise -> do
+        putStrLn "was expected, but instead this is the output"
+        mapM_ L8.putStrLn encoded
+        putStrLn (color 31 "FAIL\n")
+    Left exn -> do
+        putStrLn "execution failed with this error:"
+        putStrLn (show (exn :: SomeException))
+        putStrLn (color 31 "ERROR\n")
 
 color :: Int -> String -> String
 color n = ("\^[["++) . shows n . ('m':) . (++ "\^[[m")
