@@ -6,7 +6,6 @@ where
 
 import Data.Aeson
 import Data.Maybe
-import Data.Functor
 import Control.Exception
 import qualified Data.ByteString.Lazy as L
 import System.IO (hClose)

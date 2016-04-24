@@ -26,7 +26,6 @@ import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
 import Data.Traversable (Traversable(..),foldMapDefault)
-import Data.Foldable (Foldable(foldMap))
 import System.IO.Unsafe
 import System.Process (readProcess)
 
