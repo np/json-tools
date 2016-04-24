@@ -362,6 +362,9 @@ trueValue _        = True
 selectF :: Filter -> Filter
 selectF f x = [x | any trueValue (f x)]
 
+whenF :: Filter -> Filter
+whenF f x = [x | all trueValue (f x)]
+
 concatF, composeF :: [F a] -> F a
 
 concatF [] = IdF
@@ -476,6 +479,7 @@ filterOp2 = lookupOp tbl 2
           ,("map"         , filterF2 "f" "[.[] | f]") -- def map(f): [.[] | f];
           ,("with_entries", filterF2 "f" "to_entries | map(f) | from_entries") -- "def with_entries(f): to_entries | map(f) | from_entries;"
           -- NP extensions
+          ,("when"        , whenF)
           ,("system"      , op2VF systemOp)
           ,("intercalate" , op2VF intercalateOp)
           ,("intersperse" , op2VF intersperseOp)
