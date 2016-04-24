@@ -21,7 +21,7 @@ import qualified Data.ByteString.Lazy.Char8 as L8
 import qualified Data.Vector as V
 import Data.Vector (Vector)
 import qualified Data.HashSet as S
-import Data.Attoparsec.Char8 hiding (Result, parse)
+import Data.Attoparsec.ByteString.Char8 hiding (Result, parse)
 import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
