@@ -152,18 +152,20 @@ boolOp2 f x y = Bool (f x y)
 boolOp2' :: (Bool -> Bool -> Bool) -> ValueOp2
 boolOp2' f x y = Bool (f (trueValue x) (trueValue y))
 
-lengthFi :: Value -> Int
+-- NOTE: As in jq length is the identity on numbers.
+lengthFi :: Value -> Scientific
 lengthFi Null       = 0
-lengthFi (Array v)  = V.length v
-lengthFi (Object o) = length . H.toList $ o
-lengthFi (String s) = T.length s
-lengthFi x          = err1 x $ \x' -> [x', "has no length"]
+lengthFi (Array v)  = fromIntegral $ V.length v
+lengthFi (Object o) = fromIntegral $ length . H.toList $ o
+lengthFi (String s) = fromIntegral $ T.length s
+lengthFi (Number n) = n
+lengthFi (Bool b)   = err1 (Bool b) $ \x' -> [x', "has no length"]
 
 lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp,
   uniqueOp, toNumberOp, toStringOp, decodeOp, linesOp, unlinesOp,
   wordsOp, unwordsOp, tailOp, initOp, reverseOp :: ValueOp1
 
-lengthOp = toJSON . lengthFi
+lengthOp = Number . lengthFi
 
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
 keysOp (Object o) = toJSON . sort . H.keys $ o
