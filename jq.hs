@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS -fno-warn-orphans #-}
 import Control.Applicative as A
 import Control.Arrow (first,second,(***))
 import Control.Monad ((<=<),(>=>))
