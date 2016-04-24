@@ -74,7 +74,8 @@ executable json-quote
 executable hjq
     main-is: jq.hs
     Build-depends: base>=3&&<5, aeson, text, attoparsec, attoparsec-expr,
-                   unordered-containers, vector, bytestring, process
+                   unordered-containers, vector, bytestring, process,
+                   scientific
     ghc-options: -Wall
 
 source-repository head

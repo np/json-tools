@@ -12,6 +12,7 @@ import Data.Aeson
 import Data.Aeson.Parser (jstring, value)
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
+import Data.Scientific hiding (scientific)
 import qualified Data.Text as T
 import Data.Text (Text)
 import qualified Data.ByteString as B
@@ -118,9 +119,8 @@ x        *| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be multiplie
 Number x /| Number y = Number (x / y)
 x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 
--- Only integers so far
-Number (I x) %| Number (I y) = Number (I (x `rem` y))
-x            %| y            = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
+Number x %| Number y = Number (fromInteger $ floor x `rem` floor y)
+x %| y = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
 
 newtype NObj a = NObj (HashMap Text a)
   deriving (Eq)
@@ -173,14 +173,10 @@ addOp = foldr (+|) Null . toList
 negateOp (Number n) = Number (negate n)
 negateOp x          = err1 x $ \x' -> [x', "cannot be negated"]
 
-toDouble :: Number -> Double
-toDouble (D d) = d
-toDouble (I i) = fromIntegral i
-
-sqrtOp (Number n) = Number (D (sqrt (toDouble n)))
+sqrtOp (Number n) = Number (fromFloatDigits (sqrt (toRealFloat n :: Double)))
 sqrtOp x          = err1 x $ \x' -> [x', "has no square root"]
 
-floorOp (Number n) = Number (I (floor (toDouble n)))
+floorOp (Number n) = Number (fromInteger $ floor n)
 floorOp x          = err1 x $ \x' -> [x', "cannot be floored"]
 
 sortOp (Array v) = Array (V.fromList . sort . V.toList $ v)
@@ -190,7 +186,7 @@ uniqueOp (Array v) = Array (V.fromList . nub . sort . V.toList $ v)
 uniqueOp x         = err1 x $ \x' -> [x', "cannot be grouped, as it is not an array"]
 
 toNumberOp n@Number{} = n
-toNumberOp (String s) = either (const e) Number $ parseM "number" number (L8.pack . T.unpack $ s)
+toNumberOp (String s) = either (const e) Number $ parseM "number" scientific (L8.pack . T.unpack $ s)
   where e = error $ "Invalid numeric literal (while parsing '" <> T.unpack s <> "'"
 toNumberOp x     = err1 x $ \x' -> [x', "cannot be parsed as a number"]
 
@@ -243,28 +239,26 @@ intersperseOp x y = errK "intersperse" [(x,kinds),(y,[KArray])]
 splitOp (String x) (String y) = toJSON $ T.splitOn x y
 splitOp x y = errK "split" [(x,[KString]),(y,[KString])]
 
-chunksOp (Number (I n)) (String s) = toJSON $ T.chunksOf (fromInteger n) s
+chunksOp (Number n) (String s) = toJSON $ T.chunksOf (floor n) s
 chunksOp x y = errK "chunks" [(x,[KNumber]),(y,[KString])]
 
-takeOp (Number (I n)) (String s) = String (T.take (fromInteger n) s)
-takeOp (Number (I n)) (Array  v) = Array  (V.take (fromInteger n) v)
+takeOp (Number n) (String s) = String (T.take (floor n) s)
+takeOp (Number n) (Array  v) = Array  (V.take (floor n) v)
 takeOp x y = errK "take" [(x,[KNumber]),(y,[KString,KArray])]
 
-dropOp (Number (I n)) (String s) = String (T.drop (fromInteger n) s)
-dropOp (Number (I n)) (Array  v) = Array  (V.drop (fromInteger n) v)
+dropOp (Number n) (String s) = String (T.drop (floor n) s)
+dropOp (Number n) (Array  v) = Array  (V.drop (floor n) v)
 dropOp x y = errK "drop" [(x,[KNumber]),(y,[KString,KArray])]
 
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
-Array  a `at` Number (I n) = fromMaybe Null $ a V.!? fromInteger n
-Array  a `at` Number (D d) = fromMaybe Null $ a V.!? floor d
+Array  a `at` Number n     = fromMaybe Null $ a V.!? floor n
 Null     `at` String{}     = Null
 Null     `at` Number{}     = Null
 x        `at` y = err2 x y $ \x' y' -> ["Cannot index", x', "with", y']
 
 has :: BoolOp2
 Object o `has` String s     = H.member s o
-Array  a `has` Number (I n) = fromInteger n < V.length a
-Array  a `has` Number (D d) = floor d < V.length a
+Array  a `has` Number s     = fromInteger (floor s) < V.length a
 Null     `has` String{}     = False
 Null     `has` Number{}     = False
 x        `has` y = err2 x y $ \x' y' -> ["Cannot check whether", x', "has a", y', "key"]
@@ -381,7 +375,7 @@ toEntries = Array . V.fromList . fmap toEntry
 -- However I have no plan to implement variables yet
 toEntriesOp :: ValueOp1
 toEntriesOp (Object o) = toEntries . fmap (first String) . H.toList $ o
-toEntriesOp (Array  v) = toEntries . zip (fmap (Number . I) [0..]) . V.toList $ v
+toEntriesOp (Array  v) = toEntries . zip ((Number . fromInteger) <$> [0..]) . V.toList $ v
 toEntriesOp x = err1 x $ \x' -> [x', "has no keys"]
 
 fromEntriesF :: F'
@@ -563,7 +557,7 @@ bareWord = T.pack <$> ident
 parseOp0 :: Parser Value
 parseOp0
    =  String        <$> jstring
-  <|> Number        <$> number
+  <|> Number        <$> scientific
   <|> Bool True     <$  string "true"
   <|> Bool False    <$  string "false"
   <|> Null          <$  string "null"
