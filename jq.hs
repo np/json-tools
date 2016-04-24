@@ -162,7 +162,7 @@ lengthFi (Number n) = n
 lengthFi (Bool b)   = err1 (Bool b) $ \x' -> [x', "has no length"]
 
 lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp,
-  uniqueOp, toNumberOp, toStringOp, decodeOp, linesOp, unlinesOp,
+  uniqueOp, toNumberOp, toStringOp, fromjsonOp, linesOp, unlinesOp,
   wordsOp, unwordsOp, tailOp, initOp, reverseOp :: ValueOp1
 
 lengthOp = Number . lengthFi
@@ -196,8 +196,8 @@ toNumberOp x     = err1 x $ \x' -> [x', "cannot be parsed as a number"]
 toStringOp s@String{} = s
 toStringOp x = String . cs . encode $ x
 
-decodeOp (String s) = either error id . parseM "JSON value" value . cs $ s
-decodeOp x = errK "decode" [(x,[KString])]
+fromjsonOp (String s) = either error id . parseM "JSON value" value . cs $ s
+fromjsonOp x = errK "fromjson" [(x,[KString])]
 
 linesOp (String s) = Array (V.fromList . map String . T.lines $ s)
 linesOp x = errK "lines" [(x,[KString])]
@@ -451,9 +451,9 @@ filterOp1 = lookupOp tbl 1 where
           ,("tostring"      , toStringOp)
           ,("not"           , Bool . not . trueValue)
           ,("unique"        , uniqueOp)
+          ,("tojson"        , String . cs . encode)
+          ,("fromjson"      , fromjsonOp)
           -- NP extensions
-          ,("encode"        , String . cs . encode)
-          ,("decode"        , decodeOp)
           ,("lines"         , linesOp)
           ,("unlines"       , unlinesOp)
           ,("words"         , wordsOp)
@@ -493,7 +493,7 @@ filterOp2 = lookupOp tbl 2
           ,("take"        , op2VF takeOp)
           ,("drop"        , op2VF dropOp)
           -- NP definitions
-          ,("jsystem"     , filterF2 "f" "encode | system(f) | decode")
+          ,("jsystem"     , filterF2 "f" "tojson | system(f) | fromjson")
           ]
 
 unknown :: Int -> Name -> a
