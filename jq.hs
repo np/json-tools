@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, OverloadedStrings #-}
+{-# LANGUAGE OverloadedStrings #-}
 import Control.Applicative as A
 import Control.Arrow (first,second,(***))
 import Control.Monad ((<=<),(>=>))
@@ -228,7 +228,7 @@ endoTextOp :: String -> (T.Text -> T.Text) -> ValueOp1
 endoTextOp _    textOp (String s) = String (textOp s)
 endoTextOp name _      x          = errK name [(x,[KString])]
 
-at, systemOp, intercalateOp, intersperseOp, splitOp, chunksOp, takeOp, dropOp :: ValueOp2
+at, intercalateOp, intersperseOp, splitOp, chunksOp, takeOp, dropOp :: ValueOp2
 
 intercalateOp (String s) (Array v) = String . T.intercalate s . map fromString . V.toList $ v
 intercalateOp x y = errK "intercalate" [(x,[KString]),(y,[KArray])]
@@ -295,11 +295,14 @@ objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . di
 op2VF :: ValueOp2 -> Filter -> Filter
 op2VF op f inp = [ op x inp | x <- f inp ]
 
-systemOp cmdargs (String inp)
-  | Success (cmd:args) <- fromJSON cmdargs =
+-- This is actually in IO!
+systemOp :: ValueOp2
+systemOp cmdargs (String inp) =
+  case fromJSON cmdargs of
+    Success (cmd:args) ->
       -- Yes I am ashamed!
       unsafePerformIO . fmap (String . T.pack) . readProcess cmd args . T.unpack $ inp
-  | otherwise =
+    _ ->
       err1 cmdargs $ \cmdargs' -> ["system()'s second argument must be an array of strings and not a", cmdargs']
 systemOp _cmdargs inp =
   err1 inp $ \inp' -> ["system()'s input must be a string and not a", inp']
