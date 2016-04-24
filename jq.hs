@@ -274,7 +274,7 @@ String x `contains` String y = x `T.isInfixOf` y
 -- TODO: subarray, ...
 x `contains` _ = err1 x $ \x' -> ["Not yet implemented: containement on", x']
 
-toList :: Value -> [Value]
+toList :: Filter
 toList (Array v)  = V.toList v
 toList (Object o) = H.elems o
 toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
@@ -332,7 +332,6 @@ type Name = String
 data F a
   = IdF                 -- .
   | CompF (F a) (F a)   -- f | g
-  | AllF                -- .[]
   | BothF (F a) (F a)   -- f, g
   | ArrayF (F a)        -- [f]
   | ObjectF (Obj (F a)) -- {a: f, b: g}
@@ -354,7 +353,7 @@ atF = op3F "_at"
 -- f[]
 atFm :: F' -> Maybe F' -> F'
 atFm f (Just g) = atF f g
-atFm f Nothing  = f `CompF` AllF
+atFm f Nothing  = f `CompF` OpF "[]" []
 
 -- .key
 atKeyF :: Text -> F'
@@ -400,7 +399,6 @@ fromEntriesF = parseF "map({(.key): .value}) | add"
 subst :: (a -> [F b] -> F b) -> F a -> F b
 subst _   IdF           = IdF
 subst env (CompF f g)   = CompF (subst env f) (subst env g)
-subst _   AllF          = AllF
 subst env (BothF f g)   = BothF (subst env f) (subst env g)
 subst env (ArrayF f)    = ArrayF (subst env f)
 subst env (ObjectF o)   = ObjectF (fmap (subst env) o)
@@ -431,6 +429,7 @@ filterOp1 :: Name -> Filter
 filterOp1 = lookupOp tbl 1 where
   tbl = H.fromList . (tbl' ++) $
           [("empty"         , emptyF)
+          ,("[]"            , toList)
           ,("from_entries"  , filter filterOp fromEntriesF)]
 
   tbl' = map (second (pure .))
@@ -537,7 +536,6 @@ filterOp nm fs     = unknown (length fs) nm
 filter :: (a -> [Filter] -> Filter) -> F a -> Filter
 filter _   IdF           = pure
 filter env (CompF f g)   = filter env f >=> filter env g
-filter _   AllF          = toList
 filter env (BothF f g)   = bothF (filter env f) (filter env g)
 filter env (ArrayF f)    = arrayF (filter env f)
 filter env (ObjectF o)   = objectF (fmap (filter env) o)
