@@ -350,6 +350,12 @@ keyF = ConstF . String
 atF :: F' -> F' -> F'
 atF = op3F "_at"
 
+-- f[g]
+-- f[]
+atFm :: F' -> Maybe F' -> F'
+atFm f (Just g) = atF f g
+atFm f Nothing  = f `CompF` AllF
+
 -- .key
 atKeyF :: Text -> F'
 atKeyF = atF IdF . keyF
@@ -542,18 +548,17 @@ filter _   (ErrorF msg)  = error msg
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
   parseNoCommaFilter, parseFilter, parseDotFilter, parseConcFilter :: Parser F'
 
-parseDotFilter =
-   parseAtFilters =<< (atKeyF <$> (skipSpace *> (bareWord <|> jstring)) <|> pure IdF)
+parseDotFilter = atKeyF <$> (char '.'  *> skipSpace *> (bareWord <|> jstring))
   <?> "dot filter"
 
 parseAtFilters :: F' -> Parser F'
-parseAtFilters f =
-  do g <-    f `CompF` AllF <$  (skipSpace *> string "[]")
-         <|> atF f <$> (tok '[' *> parseFilter <* tok ']')
-         <|> pure IdF
-     case g of
-       IdF -> return f
-       _   -> parseAtFilters g
+parseAtFilters f = do
+  b <- tok '[' *> (atFm f <$> optional parseFilter) <* tok ']'
+       <|> (f `CompF`) <$> parseDotFilter
+       <|> pure IdF
+  case b of
+    IdF -> pure f
+    _   -> parseAtFilters b
 
 ident :: Parser String
 ident = (:) <$> satisfy lic <*> many (satisfy ic)
@@ -580,9 +585,10 @@ tok c = skipSpace *> char c
 
 parseSimpleFilter
   =  skipSpace *>
-  (  composeF <$> many1 (char '.'  *> parseDotFilter)
+  (  parseDotFilter
+ <|> IdF      <$  char '.'
  <|> ConstF   <$> parseOp0
- <|> OpF      <$> ident <*> (tok '(' *> parseFilter `sepBy` tok ';' <* tok ')' <|> pure [])
+ <|> OpF      <$> ident <*> (tok '(' *> parseFilter `sepBy1` tok ';' <* tok ')' <|> pure [])
  <|> ArrayF   <$  char '[' <*> parseFilter <* tok ']'
  <|> ObjectF  <$> objectFilterP
  <|> char '('  *> parseFilter <* tok ')'
@@ -607,10 +613,10 @@ binary (name, fun) = Infix (op3F fun <$ skipSpace <* string name)
 parseOpFilter = buildExpressionParser table parseConcFilter
              <?> "op filter"
 
-parseCommaFilter = concatF <$> parseOpFilter `sepBy` tok ','
+parseCommaFilter = concatF <$> parseOpFilter `sepBy1` tok ','
                 <?> "comma filter"
 
-parseNoCommaFilter = composeF <$> parseOpFilter `sepBy` tok '|'
+parseNoCommaFilter = composeF <$> parseOpFilter `sepBy1` tok '|'
                   <?> "no comma filter"
 
 parseFilter = composeF <$> parseCommaFilter `sepBy1` tok '|'
