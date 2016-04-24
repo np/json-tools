@@ -125,6 +125,19 @@ usage msg = mapM_ (hPutStrLn stderr)
   ,"           | [ '0' - '9' ]*     # Access the array/sequence at the given index"
   ,"           | '*'                # Keep all children of the given node (requires -m)"
   ,""
+  ,"The same behavior can be obtained with jq (or hjq) following this translation:"
+  ,""
+  ,"path() = ."
+  ,"path(/<segment><path>) = .[segment(<segment>)]"
+  ,""
+  ,"segment(\"<char>*\" as s) = s"
+  ,"segment(['0'-'9']*  as n) = n"
+  ,"segment('*')              = "
+  ,""
+  ,"Finally calling ./jq with following filter: [path(p)]"
+  ,""
+  ,"For instance the path /\"foo\"/\"$bar\"/*/42 becomes:"
+  ,"  jq '[.foo[\"$bar\"][][42]]'"
   ,msg] >> exitFailure
 
 main :: IO ()

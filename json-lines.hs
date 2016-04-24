@@ -18,7 +18,9 @@ usage = mapM_ (hPutStrLn stderr)
   ,""
   ,"Reads the given files as JSON arrays (or standard input, if '-' or"
   ,"no file is given). Writes on standard output the elements of these"
-  ,"arrays as one JSON document per line."]
+  ,"arrays as one JSON document per line."
+  ,""
+  ,"Same as: jq -c '.[]' <file>*"]
   >> exitFailure
 
 main :: IO ()

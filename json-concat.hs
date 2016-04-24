@@ -12,7 +12,12 @@ usage = mapM_ (hPutStrLn stderr)
   ["Usage: json-concat [--help]"
   ,""
   ,"Reads the standard input as a JSON array of arrays, and writes"
-  ,"on standard output the concatenations of these arrays as a JSON array."]
+  ,"on standard output the concatenations of these arrays as a JSON array."
+  ,""
+  ,"Actually this tool does no more than the following ./jq filter:"
+  ,"  map(.[])"
+  ,"or equivalently:"
+  ,"  [.[][]]"]
   >> exitFailure
 
 main :: IO ()
