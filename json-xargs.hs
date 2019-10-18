@@ -3,11 +3,9 @@ import qualified Data.ByteString.Lazy as L
 import Data.Text as T
 import Data.Monoid
 import Data.Maybe
-import Data.Foldable
-import Data.Functor
 import System.Environment
 import System.Exit
-import System.Cmd (rawSystem)
+import System.Process (rawSystem)
 
 -- NOTE that the map keys are not included
 

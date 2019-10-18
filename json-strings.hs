@@ -3,7 +3,6 @@ import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy.Char8 as L8
 import Data.Monoid
 import Data.Maybe
-import Data.Foldable hiding (mapM_)
 import Control.Monad (when)
 import System.IO (hPutStrLn, stderr)
 import System.Environment (getArgs)

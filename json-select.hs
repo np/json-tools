@@ -1,5 +1,4 @@
 import Data.List
-import Data.Monoid
 import qualified Data.HashMap.Strict as HM
 import Control.Arrow
 import Data.Aeson

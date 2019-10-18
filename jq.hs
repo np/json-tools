@@ -10,7 +10,7 @@ import Data.Maybe
 import Data.Char
 import Data.List ((\\),sort,sortBy,intersperse,nub)
 import Data.Monoid
-import Data.Aeson
+import Data.Aeson hiding ((<?>))
 import Data.Aeson.Parser (jstring, value)
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
