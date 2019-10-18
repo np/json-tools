@@ -2,7 +2,7 @@
 {-# OPTIONS -fno-warn-orphans #-}
 import Control.Applicative as A
 import Control.Arrow (first,second,(***))
-import Control.Monad ((<=<),(>=>))
+import Control.Monad ((<=<),(>=>), guard)
 import Control.Exception (evaluate, try, SomeException)
 import Data.Ord (comparing)
 import Prelude hiding (filter,sequence,Ordering(..))
@@ -14,7 +14,8 @@ import Data.Aeson hiding ((<?>))
 import Data.Aeson.Parser (jstring, value)
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
-import Data.Scientific hiding (scientific)
+import Data.Scientific hiding (scientific, toBoundedInteger)
+import qualified Data.Scientific as Scientific
 import Data.String.Conversions (cs)
 import qualified Data.Text as T
 import Data.Text (Text)
@@ -29,6 +30,7 @@ import qualified Data.Attoparsec.Lazy as L
 import Data.Attoparsec.Expr
 import System.Environment
 import Data.Traversable (Traversable(..),foldMapDefault)
+import System.IO (stderr)
 import System.IO.Unsafe
 import System.Process (readProcess)
 
@@ -255,7 +257,12 @@ dropOp (Number n) (Array  v) = Array  (V.drop (floor n) v)
 dropOp x y = errK "drop" [(x,[KNumber]),(y,[KString,KArray])]
 
 Object o `at` String s     = fromMaybe Null $ H.lookup s o
-Array  a `at` Number n     = fromMaybe Null $ a V.!? floor n
+Array  a `at` Number n     = fromMaybe Null $ do
+                              case Scientific.toBoundedInteger n of
+                                Just i
+                                  | i < 0     -> a V.!? (V.length a + i)
+                                  | otherwise -> a V.!? i
+                                Nothing -> Nothing
 Null     `at` String{}     = Null
 Null     `at` Number{}     = Null
 x        `at` y = err2 x y $ \x' y' -> ["Cannot index", x', "with", y']
@@ -338,6 +345,7 @@ data F a
   | ObjectF (Obj (F a)) -- {a: f, b: g}
   | OpF a [F a]         -- F, F(f₀;...;fn)
   | ConstF Value        -- 1, "foo", null
+  | IfF (F a) (F a) (F a) -- if f then g else h end
   | ErrorF String
   deriving (Show)
 
@@ -370,6 +378,17 @@ selectF f x = [x | any trueValue (f x)]
 
 whenF :: Filter -> Filter
 whenF f x = [x | all trueValue (f x)]
+
+ifF :: Filter -> Filter -> Filter -> Filter
+ifF c t e x = [ y
+              | b <- c x
+              , y <- if trueValue b then t x else e x
+              ]
+
+debugOp :: ValueOp1
+debugOp x = unsafePerformIO $ do
+  L8.hPutStrLn stderr $ encode $ Array $ V.fromList [String "DEBUG:", x]
+  pure x
 
 concatF, composeF :: [F a] -> F a
 
@@ -454,6 +473,7 @@ filterOp1 = lookupOp tbl 1 where
           ,("unique"        , uniqueOp)
           ,("tojson"        , String . cs . encode)
           ,("fromjson"      , fromjsonOp)
+          ,("debug"         , debugOp)
           -- NP extensions
           ,("lines"         , linesOp)
           ,("unlines"       , unlinesOp)
@@ -542,6 +562,7 @@ filter env (ArrayF f)    = arrayF (filter env f)
 filter env (ObjectF o)   = objectF (fmap (filter env) o)
 filter env (OpF op fs)   = env op (fmap (filter env) fs)
 filter _   (ConstF v)    = constF v
+filter env (IfF c t e)   = ifF (filter env c) (filter env t) (filter env e)
 filter _   (ErrorF msg)  = error msg
 
 parseSimpleFilter, parseOpFilter, parseCommaFilter,
@@ -559,8 +580,16 @@ parseAtFilters f = do
     IdF -> pure f
     _   -> parseAtFilters b
 
+keywords :: [String]
+keywords = ["if", "then", "else", "end"]
+
+keyword :: B.ByteString -> Parser ()
+keyword s = skipSpace <* string s
+
 ident :: Parser String
-ident = (:) <$> satisfy lic <*> many (satisfy ic)
+ident = do x <- (:) <$> satisfy lic <*> many (satisfy ic)
+           guard $ x `notElem` keywords
+           pure x
   where lic c = c == '_' || isAscii c && isAlpha c
         ic  c = c == '_' || isAscii c && isAlphaNum c
 
@@ -590,6 +619,7 @@ parseSimpleFilter
  <|> OpF      <$> ident <*> (tok '(' *> parseFilter `sepBy1` tok ';' <* tok ')' <|> pure [])
  <|> ArrayF   <$  char '[' <*> parseFilter <* tok ']'
  <|> ObjectF  <$> objectFilterP
+ <|> IfF      <$  string "if" <*> parseFilter <* keyword "then" <*> parseFilter <* keyword "else" <*> parseFilter <* keyword "end"
  <|> char '('  *> parseFilter <* tok ')'
  <?> "simple filter"
   )
@@ -711,7 +741,8 @@ splitOnEmptyLines :: [L.ByteString] -> [[L.ByteString]]
 splitOnEmptyLines []  = []
 splitOnEmptyLines xss =
   case break L.null (dropWhile L.null xss) of
-    (yss,zss) -> yss : splitOnEmptyLines zss
+    (yss,zss) -> (if null yss then id else (yss :))
+                 (splitOnEmptyLines zss)
 
 dropComment :: L.ByteString -> L.ByteString
 dropComment s
