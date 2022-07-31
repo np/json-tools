@@ -1,23 +1,23 @@
 import Codec.Archive.Tar as Tar
-import qualified Data.HashMap.Strict as HM
 import qualified Data.Aeson as Aeson
+import qualified Data.Aeson.Key as K
+import qualified Data.Aeson.KeyMap as KM
 import Data.String.Conversions (cs)
-import qualified Data.Text as T
 import qualified Data.ByteString.Lazy as L
 import System.IO
 
 {-TODO currently does not work for binary files-}
 
 tar2json :: Tar.Entries FormatError -> Aeson.Value
-tar2json es0 = Aeson.Object $ HM.fromList [(k,v) | (k,Just v) <- entries es0] where
+tar2json es0 = Aeson.Object $ KM.fromList [(k,v) | (k,Just v) <- entries es0] where
 
-  entries :: Tar.Entries FormatError -> [(T.Text, Maybe Aeson.Value)]
+  entries :: Tar.Entries FormatError -> [(Aeson.Key, Maybe Aeson.Value)]
   entries Done         = []
   entries (Fail s)     = error . show $ s
   entries (Next e es)  = (path e, contents e) : entries es
 
-  path :: Tar.Entry -> T.Text
-  path = T.pack . entryPath
+  path :: Tar.Entry -> Aeson.Key
+  path = K.fromString. entryPath
 
   contents :: Tar.Entry -> Maybe Aeson.Value
   contents = fmap (Aeson.String . cs) . f . entryContent where
