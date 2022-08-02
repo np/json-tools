@@ -1,15 +1,18 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 {-# OPTIONS -fno-warn-orphans #-}
 import Control.Applicative as A
 import Control.Arrow (first,second,(***))
-import Control.Monad ((>=>), guard, when)
+import Control.Monad ((>=>), guard, when, join)
+import Control.Monad.Reader
 import Control.Exception (evaluate, try, SomeException)
 import Data.Ord (comparing)
 import Prelude hiding (filter,sequence,Ordering(..))
 import Data.Maybe
 import Data.Char
 import Data.Functor
+import Data.Foldable as Foldable
 import Data.List ((\\),sort,sortBy,intersperse,nub)
 import qualified Data.List as List
 import Data.Monoid
@@ -37,6 +40,12 @@ import Data.Traversable (Traversable(..),foldMapDefault)
 import System.IO (stderr)
 import System.IO.Unsafe
 import System.Process (readProcess)
+--import Debug.Trace (trace)
+
+type Op1 v = v -> v
+type Op2 v = v -> v -> v
+type Op3 v = v -> v -> v -> v
+type Op4 v = v -> v -> v -> v -> v
 
 type ValueOp1 = Value -> Value
 type ValueOp2 = Value -> Value -> Value
@@ -126,7 +135,9 @@ String x *| Number y = String (T.replicate (floor y) x)
                        -- This use of floor is consistent with jq
 x        *| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be multiplied"]
 
-Number x /| Number y = Number (x / y)
+Number x /| Number y = toJSON (Scientific.toRealFloat x /
+                               Scientific.toRealFloat y :: Double)
+                       -- Scientific.(/) has limitations hence the use of Double here.
 String x /| String y = toJSON (T.splitOn y x)
 x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 
@@ -179,17 +190,25 @@ toStringNoNull :: Value -> Text
 toStringNoNull Null = ""
 toStringNoNull x = toString x
 
+iterKeysF :: Filter
+iterKeysF (Array v)  = toJSON <$> [0.. V.length v - 1]
+iterKeysF (Object o) = toJSON <$> sort (H.keys o)
+iterKeysF x          = err1 x $ \x' -> [x', "has no keys"]
+
 lengthOp, keysOp, addOp, negateOp, sqrtOp, floorOp, sortOp,
   uniqueOp, toNumberOp, toStringOp, fromjsonOp, linesOp, unlinesOp,
   wordsOp, unwordsOp, tailOp, initOp, reverseOp :: ValueOp1
 
 lengthOp = Number . lengthFi
 
+keysOp = toJSON . iterKeysF
+{-
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
 keysOp (Object o) = toJSON . sort . H.keys $ o
 keysOp x          = err1 x $ \x' -> [x', "has no keys"]
+-}
 
-addOp = foldr (+|) Null . toList
+addOp = foldr (+|) Null . toListF
 
 negateOp (Number n) = Number (negate n)
 negateOp x          = err1 x $ \x' -> [x', "cannot be negated"]
@@ -286,6 +305,15 @@ rindexOp x y = cannotIndex x y
 errorOp (String msg) _ = error $ cs msg
 errorOp x _ = errK "error" [(x, [KString])]
 
+-- UNUSED
+-- TODO make ViewPattern
+-- TODO replace use of floor
+{-
+toBoundedInteger :: (Integral i, Bounded i) => Value -> Maybe i
+toBoundedInteger (Number n) = Scientific.toBoundedInteger n
+toBoundedInteger _          = Nothing
+-}
+
 chunksOp (Number n) (String s) = toJSON $ T.chunksOf (floor n) s
 chunksOp x y = errK "chunks" [(x,[KNumber]),(y,[KString])]
 
@@ -323,13 +351,16 @@ String x `contains` String y = x `T.isInfixOf` y
 -- TODO: subarray, ...
 x `contains` _ = err1 x $ \x' -> ["Not yet implemented: containement on", x']
 
-toList :: Filter
-toList (Array v)  = V.toList v
-toList (Object o) = H.elems o
-toList x          = err1 x $ \x' -> ["Cannot iterate over", x']
+toListF :: Filter
+toListF (Array v)  = V.toList v
+toListF (Object o) = H.elems o
+toListF x          = err1 x $ \x' -> ["Cannot iterate over", x']
 
-bothF :: Filter -> Filter -> Filter
-bothF f g x = f x ++ g x
+toG :: (Applicative m, Monoid (m e), PureValue e, HasValue e) => Filter -> GFilter m e
+toG f = foldMap (pure . pureValue) . f . valueOf
+
+toListG :: (Applicative m, Monoid (m e), PureValue e, HasValue e) => GFilter m e
+toListG = toG toListF
 
 arrayF :: Filter -> Filter
 arrayF f x = [Array (V.fromList $ f x)]
@@ -344,8 +375,10 @@ asObjectKey x          = err1 x $ \x' -> ["Cannot use", x', "as object key"]
 objectF :: Obj Filter -> Filter
 objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($x) $ o
 
-op2VF :: ValueOp2 -> Filter -> Filter
-op2VF op f inp = [ op x inp | x <- f inp ]
+op2VF :: Monad m => Op2 e -> Op1 (GFilter m e)
+op2VF op f inp = do
+  x <- f inp
+  pure $ op x inp
 
 -- This is actually in IO!
 systemOp :: ValueOp2
@@ -370,14 +403,11 @@ op1F op = OpF op []
 op3F :: a -> F a -> F a -> F a
 op3F op f g = OpF op [f,g]
 
-op2to3 :: ValueOp2 -> ValueOp3
-op2to3 = const
+op1to2 :: Op2 v -> Op3 v
+op1to2 = const
 
-emptyF :: Filter
-emptyF _ = []
-
-constF :: Value -> Filter
-constF v _ = [v]
+emptyF :: Alternative m => GFilter m e
+emptyF _ = empty
 
 type Name = String
 
@@ -417,17 +447,11 @@ trueValue (Bool b) = b
 trueValue Null     = False
 trueValue _        = True
 
-selectF :: Filter -> Filter
-selectF f x = [x | any trueValue (f x)]
+selectF :: (IsTrue e, Foldable m, Alternative m) => Op1 (GFilter m e)
+selectF f x = guard (any isTrue (f x)) $> x
 
-whenF :: Filter -> Filter
-whenF f x = [x | all trueValue (f x)]
-
-ifF :: Filter -> Filter -> Filter -> Filter
-ifF c t e x = [ y
-              | b <- c x
-              , y <- if trueValue b then t x else e x
-              ]
+whenF :: (IsTrue e, Foldable m, Alternative m) => Op1 (GFilter m e)
+whenF f x = guard (all isTrue (f x)) $> x
 
 debugOp :: ValueOp1
 debugOp x = unsafePerformIO $ do
@@ -440,9 +464,14 @@ concatF [] = IdF
 concatF xs = foldr1 BothF xs
 -}
 
-composeF :: [F a] -> F a
-composeF [] = IdF
-composeF xs = foldr1 CompF xs
+instance Semigroup (F a) where
+  (<>) = CompF
+
+instance Monoid (F a) where
+  mempty = IdF
+
+composeF :: Foldable t => t (F a) -> F a
+composeF = fold
 
 toEntry :: (Value,Value) -> Value
 toEntry (k,v) = Object $ H.fromList [("key",k),("value",v)]
@@ -474,7 +503,7 @@ subst env (OpF op fs)   = env op (fmap (subst env) fs)
 subst _   (ConstF v)    = ConstF v
 -}
 
-filterF2 :: String -> String -> Filter -> Filter
+filterF2 :: String -> String -> Op1 Filter
 filterF2 nmf sf f = filter env (parseF sf)
   where env nm [] | nm == nmf = f
         env nm fs             = filterOp nm fs
@@ -492,20 +521,20 @@ definitionP = Def <$ string "def" <*> bareWord <*> paramsP <* tok ':' <*> parseF
            <?> "definition"
 -}
 
-filterOp1 :: Name -> Filter
-filterOp1 = lookupOp tbl 1 where
-  tbl = H.fromList . (tbl' ++) $
+filterOp0 :: (Alternative m, Monoid (m e), PureValue e, HasValue e) => Name -> GFilter m e
+filterOp0 = lookupOp tbl 0 where
+  tbl = H.fromList $
           [("empty"         , emptyF)
           ,("error"         , emptyF) -- JQ-QUIRK
-          ,("[]"            , toList)
-          ,("from_entries"  , filter filterOp fromEntriesF)]
-
-  tbl' = map (second (pure .))
+          ,("[]"            , toListG)
+          ,("from_entries"  , toG $ filter filterOp fromEntriesF)
+          ]
+          ++ map (second (toG . (pure .)))
           [("keys"          , keysOp)
           ,("length"        , lengthOp)
           ,("add"           , addOp)
-          ,("min"           , minimum . toList)
-          ,("max"           , minimum . toList)
+          ,("min"           , minimum . toListF)
+          ,("max"           , minimum . toListF)
           ,("type"          , String . T.pack . show . kindOf)
           ,("to_entries"    , toEntriesOp)
           ,("_negate"       , negateOp)
@@ -544,15 +573,16 @@ filterOp1 = lookupOp tbl 1 where
   --   isInfixOf :: Text -> Text -> Bool
           ]
 
-filterOp2 :: Name -> Filter -> Filter
-filterOp2 = lookupOp tbl 2
+-- filterOp1 :: (IsTrue e, Foldable m, Alternative m) => Name -> Op1 (GFilter m e)
+filterOp1 :: Name -> Op1 Filter
+filterOp1 = lookupOp tbl 1
   where tbl = H.fromList
           [("select"      , selectF)
           ,("has"         , op2VF (boolOp2 (flip has)))
           ,("contains"    , op2VF (boolOp2 contains))
           ,("map"         , filterF2 "f" "[.[] | f]") -- def map(f): [.[] | f];
-          ,("with_entries", filterF2 "f" "to_entries | map(f) | from_entries") -- "def with_entries(f): to_entries | map(f) | from_entries;"
-          ,("range"       , rangeF2)
+-         ,("with_entries", filterF2 "f" "to_entries | map(f) | from_entries") -- "def with_entries(f): to_entries | map(f) | from_entries;"
+          ,("range"       , rangeF1)
           ,("isempty"     , isemptyF)
           ,("IN"          , _inF pure)
           ,("error"       , op2VF errorOp)
@@ -569,14 +599,14 @@ filterOp2 = lookupOp tbl 2
           ,("take"        , op2VF takeOp)
           ,("drop"        , op2VF dropOp)
           -- NP definitions
-          ,("jsystem"     , filterF2 "f" "tojson | system(f) | fromjson")
+--          ,("jsystem"     , filterF2 "f" "tojson | system(f) | fromjson")
           ]
 
 unknown :: Int -> Name -> a
 unknown a nm = error $ nm ++ " is not defined (arity " ++ show a ++ ")"
 
 lookupOp :: HashMap Name a -> Int -> Name -> a
-lookupOp tbl a nm = fromMaybe (unknown a nm) (H.lookup nm tbl)
+lookupOp tbl arity nm = fromMaybe (unknown arity nm) (H.lookup nm tbl)
 
 replaceOp :: ValueOp3
 replaceOp (String x) (String y) (String z) = String (T.replace y z x)
@@ -593,32 +623,258 @@ rangeOp (Number x) (Number y) (Number z)
            | otherwise = []
 rangeOp _ _ _ = err ["Range bounds must be numeric"]
 
-rangeF4 :: Filter -> Filter -> Filter -> Filter
-rangeF4 f g h x =
-  [ r | fx <- f x, gx <- g x, hx <- h x, r <- rangeOp fx gx hx ]
+rangeF3 :: (PureValue e, HasValue e, Monoid (m e), Monad m) =>
+ -- GFilter m e -> GFilter m e -> GFilter m e -> ()
+  Op3 (GFilter m e)
+rangeF3 f g h x =
+  join
+  ((\fx gx hx -> foldMap (pure . pureValue) (rangeOp (valueOf fx) (valueOf gx) (valueOf hx)))
+  <$> f x <*> g x <*> h x
+  )
 
-rangeF3 :: Filter -> Filter -> Filter
-rangeF3 f g = rangeF4 f g (constF $ Number 1)
+rangeF2 :: (PureValue e, HasValue e, Monoid (m e), Monad m) => Op2 (GFilter m e)
+rangeF2 f g = rangeF3 f g (constG $ Number 1)
 
-rangeF2 :: Filter -> Filter
-rangeF2 = rangeF3 (constF $ Number 0)
+rangeF1 :: (PureValue e, HasValue e, Monoid (m e), Monad m) => Op1 (GFilter m e)
+rangeF1 = rangeF2 (constG $ Number 0)
 
-isemptyF :: Filter -> Filter
-isemptyF f v = [Bool $ List.null (f v)]
+--modifyF :: Filter -> Filter -> Filter
+--modifyF source update v =
+--TODO
+--jq relies on: reduce, path/1, setpath/2, getpath/1, delpaths/1, label, break
+--def _modify(paths; update): reduce path(paths) as $p (.; label $out | (setpath($p; getpath($p) | update) | ., break $out), delpaths([$p]));
 
-_inF :: Filter -> Filter -> Filter
-_inF source elems v = [Bool $ any (`elem` elems v) (source v)]
+type GFilter m e = e -> m e
+
+idG :: Applicative m => GFilter m e
+idG = pure
+
+constG :: (Applicative m, PureValue e) => Value -> GFilter m e
+constG = const . pure . pureValue
+
+bothG :: PGFilter a e -> PGFilter a e -> PGFilter a e
+bothG f g x = f x <> g x
+
+bothG' :: Monoid (m e) => GFilter m e -> GFilter m e -> GFilter m e
+bothG' f g x = f x <> g x
+
+{-
+class ListValues a where
+  listValues :: a -> [Value]
+
+arrayG :: ListValues (m e) => GFilter m e -> GFilter m e
+arrayG f x = pure $ Array (V.fromList . listValues $ f x)
+-}
+
+--pgToFilter
+
+{-
+arrayG :: PGFilter a Value -> PGFilter a Value
+arrayG f x = do
+  env <- ask
+  pure $ Array (V.fromList $ runReaderT (f x) env)
+-}
+
+class IsTrue a where
+  isTrue :: a -> Bool
+
+instance IsTrue Value where
+  isTrue = trueValue
+
+ifG :: (Monad m, IsTrue e) => GFilter m e -> GFilter m e -> GFilter m e -> GFilter m e
+ifG c t e x = do
+  b <- c x
+  if isTrue b then t x else e x
+
+type GEnv a m v = a -> [GFilter m v] -> GFilter m v
+
+extend :: (Applicative m, Eq a) => a -> v -> GEnv a m v -> GEnv a m v
+extend x z env y | x == y    = \_ _ -> pure z
+                 | otherwise = env y
+
+-- E = Writer [Value] Value
+data E = E { epath :: [Value], evalue :: Value }
+
+instance IsTrue E where
+  isTrue = isTrue . evalue
+
+class HasValue a where
+  valueOf :: a -> Value
+
+instance HasValue Value where
+  valueOf = id
+
+instance HasValue E where
+  valueOf = evalue
+
+type EFilter = GFilter [] E
+
+class PureValue a where
+  pureValue :: Value -> a
+
+instance PureValue Value where
+  pureValue = id
+
+instance PureValue E where
+  pureValue = E []
+
+toE :: Filter -> EFilter
+toE f (E _ x) = pureValue <$> f x
+
+fromE :: EFilter -> Filter
+fromE f x = evalue <$> f (pureValue x)
+
+constE :: Value -> EFilter
+constE = constG
+
+arrayE :: EFilter -> EFilter
+arrayE f x = pure . pureValue . Array . V.fromList $ evalue <$> f x
+  -- pureValue == E [], but should it be E (epath x) ???
+
+objectE :: Obj EFilter -> EFilter
+objectE o x = fmap (pureValue . Object . H.fromList . fmap (first asObjectKey) . unObj)
+            . sequence . fmap (fmap evalue . ($x)) $ o
+
+asG' :: (Monad m, Eq a) => GEnv a m v -> GFilter m v -> a -> (GEnv a m v -> GFilter m v) -> GFilter m v
+asG' env f n g x = do
+  y <- f x
+  g (extend n y env) x
+
+asG :: (MonadReader (GEnv a m v) m, Eq a) => GFilter m v -> a -> GFilter m v -> GFilter m v
+asG f n g x = do
+  y <- f x
+  local (extend n y) (g x)
+
+class HasNull a where
+  nullValue :: a
+
+instance HasNull Value where
+  nullValue = Null
+
+instance HasNull E where
+  nullValue = E [] Null
+
+lastValue :: (Foldable f, HasNull v) => f v -> v
+lastValue = fromMaybe nullValue . getLast . foldMap pure
+
+reduceG' :: (Foldable m, Monad m, Eq a, HasNull v) => GEnv a m v -> GFilter m v -> a -> GFilter m v -> (GEnv a m v -> GFilter m v) -> GFilter m v
+reduceG' env input n nil cons x = do
+  z <- nil x
+  pure . foldl' f z $ input x
+  where
+    f acc y = lastValue $ cons (extend n y env) acc
+
+reduceG :: (Foldable m, MonadReader (GEnv a m v) m, Eq a, HasNull v)
+        => GFilter m v -> a -> GFilter m v -> GFilter m v -> GFilter m v
+reduceG input n nil cons x = do
+  z <- nil x
+  pure . foldl' f z $ input x
+  where
+    f acc y = lastValue . local (extend n y) $ cons acc
+
+type EEnv a = a -> [EFilter] -> EFilter
+
+{-
+type M e m = (MonadWriter [e] m, MonadReader e m)
+
+idG :: M e m => m ()
+idG = ask >>= tell . pure
+
+bothG :: Applicative m => m () -> m a -> m a
+bothG = (*>)
+
+arrayG :: m () ->
+arrayG f = do
+  x <- ask
+  tell [Array (V.fromList $ f x)]
+
+ifG :: (Monad m, a ~ Value) => m a -> m a -> m a -> m a
+ifG c t e = do
+  b <- c
+  if trueValue b then t else e
+
+type GFilter m = m Value
+type GEnv a m = a -> [m Value] -> m Value
+-}
+
+pathE :: EFilter -> EFilter
+pathE f (E _ x) = [ E ps (toJSON ps) | E ps _ <- f (E [] x) ]
+
+filterE :: (IsString a, Eq a) => EEnv a -> F a -> EFilter
+filterE _   IdF               = idG
+filterE _   (ConstF v)        = constE v
+filterE env (CompF f g)       = filterE env f >=> filterE env g
+filterE env (BothF f g)       = bothG' (filterE env f) (filterE env g)
+filterE env (ArrayF f)        = arrayE (filterE env f)
+filterE env (ObjectF o)       = objectE (filterE env <$> o)
+filterE env (OpF "path" [f])  = pathE (filterE env f)
+filterE env (OpF op fs)       = env op (filterE env <$> fs)
+filterE env (IfF c t e)       = ifG (filterE env c) (filterE env t) (filterE env e)
+filterE env (VarF n)          = env n []
+filterE env (AsF f n g)       = asG' env (filterE env f) n (`filterE` g)
+filterE env (ReduceF f n g h) = reduceG' env (filterE env f) n (filterE env g) (`filterE` h)
+{-
+pathF :: (IsString a, Eq a, MonadReader Value m, MonadWriter [[Value]] m)
+      => GEnv a -> F a -> m Value
+pathF _   IdF               = tell [[]] >> ask
+pathF env (CompF f g)       = pathF env f >=> pathF env g
+pathF env (BothF f g)       = bothG (pathF env f) (pathF env g)
+pathF _   (OpF "[]" [])     = do i <- ask
+                                 mapM_ tell $ iterKeysF i
+>=> (\v -> [toJSON [v]])
+pathF env (OpF "_at" [f,g]) = \v -> liftA2 (\x y -> x +| Array (V.fromList [y])) (pathF env f v) (filter env g Null)
+pathF env (OpF op fs)       = error "pathF" env op (filter env <$> fs)
+pathF env (IfF c t e)       = ifG (pathF env c) (pathF env t) (pathF env e)
+pathF env (VarF n)          = env n []
+pathF env (AsF f n g)       = error "asF" env (filter env f) n (`pathF` g)
+pathF env (ReduceF f n g h) = error "reduceF" env (filter env f) n (pathF env g) (`pathF` h)
+pathF env f@ConstF{}        = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+pathF env f@ArrayF{}        = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+pathF env f@ObjectF{}       = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+
+-- pathF :: Eq a => Env a -> F a -> Filter
+pathF :: (IsString a, Eq a) => Env a -> F a -> m Value
+pathF _   IdF               = pure [Array mempty]
+pathF env (CompF f g)       = \v -> liftA2 (+|) (pathF env f v) ((filter env f >=> pathF env g) v)
+pathF env (BothF f g)       = bothF (pathF env f) (pathF env g)
+pathF _   (OpF "[]" [])     = iterKeysF >=> (\v -> [toJSON [v]])
+pathF env (OpF "_at" [f,g]) = \v -> liftA2 (\x y -> x +| Array (V.fromList [y])) (pathF env f v) (filter env g Null)
+pathF env (OpF op fs)       = error "pathF" env op (filter env <$> fs)
+pathF env (IfF c t e)       = ifF (filter env c) (pathF env t) (pathF env e)
+pathF env (VarF n)          = env n []
+pathF env (AsF f n g)       = asF env (filter env f) n (`pathF` g)
+pathF env (ReduceF f n g h) = reduceF env (filter env f) n (pathF env g) (`pathF` h)
+pathF env f@ConstF{}        = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+pathF env f@ArrayF{}        = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+pathF env f@ObjectF{}       = filter env f >=> \v -> err ["Invalid path expression with result", cs $ encode v]
+-}
+
+isemptyF :: (PureValue e, Foldable m, Applicative m) => Op1 (GFilter m e)
+isemptyF f v = pure . pureValue . Bool $ Foldable.null (f v)
+
+-- streamOp2 :: ([Value] -> [Value] -> Value) -> Filter -> Filter -> Filter
+-- streamOp2 op f g v =
+
+-- NOTE `Eq e` when E ~ e this compare paths too!
+_inF :: (Eq e, PureValue e, Foldable m, Applicative m) => Op2 (GFilter m e)
+_inF source elems v = pure . pureValue . Bool $ any (`elem` elems v) (source v)
+
+-- _indexF :: Filter -> Filter -> Filter
+-- _indexF source ix_expr
 
 -- The use of `ceiling` seems consistent with jq.
-limitF :: Filter -> Filter -> Filter
-limitF f g v =
-  [ r | Number l <- f v, r <- List.take (ceiling l) (g v) ]
+limitF :: HasValue e => Op2 (GFilter [] e)
+limitF f g v = do
+  Number l <- valueOf <$> f v
+  List.take (ceiling l) (g v)
 
-nthF :: Filter -> Filter -> Filter
-nthF f g v = [ nth (ceiling l :: Int) (g v) | Number l <- f v ]
+nthF :: (HasValue e, HasNull e) => Op2 (GFilter [] e)
+nthF f g v = do
+    Number l <- valueOf <$> f v
+    pure $ nth (ceiling l :: Int) (g v)
   where
     nth n _ | n < 0 = err ["nth doesn't support negative indices"]
-    nth _ []        = Null
+    nth _ []        = nullValue
     nth 0 (x:_)     = x
     nth n (x:xs)    = go (n - 1) x xs
 
@@ -626,20 +882,26 @@ nthF f g v = [ nth (ceiling l :: Int) (g v) | Number l <- f v ]
     go 0 _ (y:_)  = y
     go n _ (y:ys) = go (n - 1) y ys
 
-valueOp3 :: ValueOp3 -> Filter -> Filter -> Filter
-valueOp3 op f g x = [ op x y z | z <- g x, y <- f x ]
+valueOp3 :: Applicative m => Op3 e -> Op2 (GFilter m e)
+valueOp3 op f g x = op x <$> f x <*> g x
+-- liftA2 (op x) (f x) (g x)
 
-filterOp3 :: Name -> Filter -> Filter -> Filter
-filterOp3 = lookupOp tbl 3 where
+valueOp3' :: Applicative m => Op3 e -> Op2 (GFilter m e)
+valueOp3' op f g x = flip (op x) <$> g x <*> f x
+
+filterOp2 :: Name -> Op2 Filter
+filterOp2 = lookupOp tbl 2 where
   tbl = H.fromList $
             [("limit", limitF)
             ,("nth",   nthF)
             ,("IN",    _inF)
+--            ,("INDEX", _indexF)
+-- TODO            ,("_modify", modifyF)
             ] ++
           -- NP definitions
             map (second valueOp3)
             [("replace"    , replaceOp)]
-         ++ map (second (valueOp3 . op2to3))
+         ++ map (second (valueOp3' . op1to2))
             [("_plus"      , (+|))
             ,("_multiply"  , (*|))
             ,("_minus"     , (-|))
@@ -651,61 +913,72 @@ filterOp3 = lookupOp tbl 3 where
             ,("_greater"   , boolOp2 (>))
             ,("_equal"     , boolOp2 (==))
             ,("_notequal"  , boolOp2 (/=))
-            ,("_and"       , boolOp2' (&&))
-            ,("_or"        , boolOp2' (||))
             ,("_at"        , at)
             ]
-         ++ [("range"      , rangeF3)
+         ++ map (second (valueOp3 . op1to2))
+            [("_and"       , boolOp2' (&&))
+            ,("_or"        , boolOp2' (||))
+            ]
+         ++ [("range"      , rangeF2)
             ]
 
-filterOp4 :: Name -> Filter -> Filter -> Filter -> Filter
-filterOp4 = lookupOp tbl 4 where
+filterOp3 :: (PureValue e, HasValue e, Monoid (m e), Monad m) => Name -> Op3 (GFilter m e)
+filterOp3 = lookupOp tbl 3 where
   tbl = H.fromList $
-            [("range"      , rangeF4)
+            [("range"      , rangeF3)
             ]
-
-filterOp :: Name -> [Filter] -> Filter
-filterOp nm []      = filterOp1 nm
-filterOp nm [f]     = filterOp2 nm f
-filterOp nm [f,g]   = filterOp3 nm f g
-filterOp nm [f,g,h] = filterOp4 nm f g h
-filterOp nm fs      = unknown (length fs) nm
 
 type Env a = a -> [Filter] -> Filter
 
-extend :: Eq a => a -> Value -> Env a -> Env a
-extend x z env y | x == y    = \_ _ -> pure z
-                 | otherwise = env y
+filterOp :: Env Name
+filterOp nm []      = filterOp0 nm
+filterOp nm [f]     = filterOp1 nm f
+filterOp nm [f,g]   = filterOp2 nm f g
+filterOp nm [f,g,h] = filterOp3 nm f g h
+filterOp nm fs      = unknown (length fs) nm
 
-asF :: Eq a => Env a -> Filter -> a -> (Env a -> Filter) -> Filter
-asF env f n g x = do
-  y <- f x
-  g (extend n y env) x
+askEnv :: (Eq a, MonadReader (GEnv a m Value) m) => a -> [GFilter m Value] -> GFilter m Value
+askEnv op fs x = do
+  env <- ask
+  env op fs x
 
-lastValue :: [Value] -> Value
-lastValue [] = Null
-lastValue [x] = x
-lastValue (_:xs) = lastValue xs
+type PGFilter a e = forall m. (Foldable m, Monoid (m e), MonadReader (GEnv a m e) m) => GFilter m e
 
-reduceF :: Eq a => Env a -> Filter -> a -> Filter -> (Env a -> Filter) -> Filter
-reduceF env input n nil cons x = do
-  z <- nil x
-  [List.foldl' f z $ input x]
-  where
-    f acc y = lastValue $ cons (extend n y env) acc
-
-filter :: Eq a => Env a -> F a -> Filter
+-- filter :: Eq a => Env a -> F a -> Filter
+-- filterG :: (IsString a, Eq a, MonadReader (Env a) m) => F a -> GFilter m Value
+{-
+filterG :: (IsString a, Eq a) => F a -> PGFilter a Value
+filterG IdF               = pure
+filterG (ConstF v)        = constG v
+filterG (CompF f g)       = filterG f >=> filterG g
+filterG (BothF f g)       = bothG (filterG f) (filterG g)
+filterG (ArrayF f)        = arrayG (filterG f)
+filterG (ObjectF o)       = _HobjectF (filterG <$> o)
+-- filterG (OpF "path" [f])  = pathF f
+filterG (OpF op fs)       = askEnv op (filterG <$> fs)
+filterG (IfF c t e)       = ifG (filterG c) (filterG t) (filterG e)
+filterG (VarF n)          = askEnv n []
+filterG (AsF f n g)       = asG (filterG f) n (filterG g)
+filterG (ReduceF f n g h) = reduceG (filterG f) n (filterG g) (filterG h)
+-}
+-- filter :: Eq a => Env a -> F a -> Filter
+filter :: (IsString a, Eq a) => Env a -> F a -> Filter
+{-
+filter env f = fromE $ filterE env f
+--filter env f = fromE $ filterE (\a fs -> toE (env a (fromE <$> fs))) f
+-}
 filter _   IdF               = pure
-filter _   (ConstF v)        = constF v
+filter _   (ConstF v)        = constG v
 filter env (CompF f g)       = filter env f >=> filter env g
-filter env (BothF f g)       = bothF (filter env f) (filter env g)
+filter env (BothF f g)       = bothG' (filter env f) (filter env g)
 filter env (ArrayF f)        = arrayF (filter env f)
 filter env (ObjectF o)       = objectF (filter env <$> o)
+-- filter env (OpF "path" [f])  = pathF env f
 filter env (OpF op fs)       = env op (filter env <$> fs)
-filter env (IfF c t e)       = ifF (filter env c) (filter env t) (filter env e)
+filter env (IfF c t e)       = ifG (filter env c) (filter env t) (filter env e)
 filter env (VarF n)          = env n []
-filter env (AsF f n g)       = asF env (filter env f) n (`filter` g)
-filter env (ReduceF f n g h) = reduceF env (filter env f) n (filter env g) (`filter` h)
+filter env (AsF f n g)       = asG' env (filter env f) n (`filter` g)
+filter env (ReduceF f n g h) = reduceG' env (filter env f) n (filter env g) (`filter` h)
 
 parseSimpleFilter, parseNegateFilter, parseAsFilter,
   parseNoCommaFilter, parseFilter, parseDotFilter, parseConcFilter :: Parser F'
@@ -987,7 +1260,7 @@ splitOnEmptyLines :: [L.ByteString] -> [[L.ByteString]]
 splitOnEmptyLines []  = []
 splitOnEmptyLines xss =
   case break L.null (dropWhile L.null xss) of
-    (yss,zss) -> (if null yss then id else (yss :))
+    (yss,zss) -> (if List.null yss then id else (yss :))
                  (splitOnEmptyLines zss)
 
 dropComment :: L.ByteString -> L.ByteString

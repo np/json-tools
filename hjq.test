@@ -20,3 +20,25 @@ reduce ( "a", "b", "c" ) as $n ("i1","i2"; {n: $n, i: ., r: ("r1","r2")})
 7
 {"n":"c","i":{"n":"b","i":{"n":"a","i":"i1","r":"r2"},"r":"r2"},"r":"r2"}
 {"n":"c","i":{"n":"b","i":{"n":"a","i":"i2","r":"r2"},"r":"r2"},"r":"r2"}
+
+path((.foo, .bar) | (.baz, .qux))
+null
+[ "foo", "baz" ]
+[ "foo", "qux" ]
+[ "bar", "baz" ]
+[ "bar", "qux" ]
+
+system
+
+jsystem
+
+(false | debug) and (2 | debug)
+null
+["DEBUG:",false]
+false
+
+(3 | debug) + (2 | debug)
+null
+["DEBUG:",3]
+["DEBUG:",2]
+5

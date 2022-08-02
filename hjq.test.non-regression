@@ -1,5 +1,3 @@
-# hjq --run-tests PASS < jq.test >! hjq.test.non-regression
-
 true
 null
 true
