@@ -18,6 +18,8 @@ import qualified Data.List as List
 import Data.Monoid
 import Data.Aeson hiding ((<?>))
 import Data.Aeson.Parser (jstring, value)
+import qualified Data.Aeson.KeyMap as KM
+import qualified Data.Aeson.Key as K
 import qualified Data.HashMap.Strict as H
 import Data.HashMap.Strict (HashMap)
 import Data.Scientific hiding (scientific, toBoundedInteger)
@@ -144,28 +146,31 @@ x        /| y        = err2 x y $ \x' y' -> [x', "and", y', "cannot be divided"]
 Number x %| Number y = Number (fromInteger $ floor x `rem` floor y)
 x %| y = err2 x y $ \x' y' -> [x', "and", y', "cannot be 'mod'ed"]
 
-newtype NObj a = NObj (HashMap Text a)
+newtype NValue = NValue Value
   deriving (Eq)
-instance Ord a => Ord (NObj a) where
-  x <= y | x == y = True
-  NObj x <= NObj y = f x <= f y where f = sortBy (comparing fst) . H.toList
 
-instance Ord Value where
-  Null     <= _        = True
-  _        <= Null     = False
-  Bool   x <= Bool y   = x <= y
-  Bool   _ <= _        = True
-  _        <= Bool _   = False
-  Number x <= Number y = x <= y
-  Number _ <= _        = True
-  _        <= Number _ = False
-  String x <= String y = x <= y
-  String _ <= _        = True
-  _        <= String _ = False
-  Array  x <= Array  y = x <= y
-  Array  _ <= _        = True
-  _        <= Array _  = False
-  Object x <= Object y = NObj x <= NObj y
+instance Ord NValue where
+  NValue vx <= NValue vy =
+    case (vx, vy) of
+      (Null    , _       ) -> True
+      (_       , Null    ) -> False
+      (Bool   x, Bool y  ) -> x <= y
+      (Bool   _, _       ) -> True
+      (_       , Bool _  ) -> False
+      (Number x, Number y) -> x <= y
+      (Number _, _       ) -> True
+      (_       , Number _) -> False
+      (String x, String y) -> x <= y
+      (String _, _       ) -> True
+      (_       , String _) -> False
+      (Array  x, Array  y) -> (NValue <$> x) <= (NValue <$> y)
+      (Array  _, _       ) -> True
+      (_       , Array _ ) -> False
+      (Object x, Object y) -> x == y || f x <= f y
+      where f = map (second NValue) . sortBy (comparing fst) . KM.toList
+
+nvalueOp2 :: (NValue -> NValue -> a) -> Value -> Value -> a
+nvalueOp2 f x y = f (NValue x) (NValue y)
 
 boolOp2 :: BoolOp2 -> ValueOp2
 boolOp2 f x y = Bool (f x y)
@@ -173,11 +178,14 @@ boolOp2 f x y = Bool (f x y)
 boolOp2' :: (Bool -> Bool -> Bool) -> ValueOp2
 boolOp2' f x y = Bool (f (trueValue x) (trueValue y))
 
+boolOp2Ord :: (NValue -> NValue -> Bool) -> ValueOp2
+boolOp2Ord = boolOp2 . nvalueOp2
+
 -- NOTE: As in jq length is the identity on numbers.
 lengthFi :: Value -> Scientific
 lengthFi Null       = 0
 lengthFi (Array v)  = fromIntegral $ V.length v
-lengthFi (Object o) = fromIntegral $ length . H.toList $ o
+lengthFi (Object o) = fromIntegral $ length . KM.toList $ o
 lengthFi (String s) = fromIntegral $ T.length s
 lengthFi (Number n) = n
 lengthFi (Bool b)   = err1 (Bool b) $ \x' -> [x', "has no length"]
@@ -204,7 +212,7 @@ lengthOp = Number . lengthFi
 keysOp = toJSON . iterKeysF
 {-
 keysOp (Array v)  = toJSON [0.. V.length v - 1]
-keysOp (Object o) = toJSON . sort . H.keys $ o
+keysOp (Object o) = toJSON . sort . KM.keys $ o
 keysOp x          = err1 x $ \x' -> [x', "has no keys"]
 -}
 
@@ -325,7 +333,7 @@ dropOp (Number n) (String s) = String (T.drop (floor n) s)
 dropOp (Number n) (Array  v) = Array  (V.drop (floor n) v)
 dropOp x y = errK "drop" [(x,[KNumber]),(y,[KString,KArray])]
 
-Object o `at` String s     = fromMaybe Null $ H.lookup s o
+Object o `at` String s     = fromMaybe Null $ KM.lookup (K.fromText s) o
 Array  a `at` Number n     = fromMaybe Null $ do
                               case Scientific.toBoundedInteger n of
                                 Just i
@@ -337,7 +345,7 @@ Null     `at` Number{}     = Null
 x        `at` y            = cannotIndex x y
 
 has :: BoolOp2
-Object o `has` String s     = H.member s o
+Object o `has` String s     = KM.member (K.fromText s) o
 Array  a `has` Number s     = fromInteger (floor s) < V.length a
 Null     `has` String{}     = False
 Null     `has` Number{}     = False
@@ -353,7 +361,7 @@ x `contains` _ = err1 x $ \x' -> ["Not yet implemented: containement on", x']
 
 toListF :: Filter
 toListF (Array v)  = V.toList v
-toListF (Object o) = H.elems o
+toListF (Object o) = KM.elems o
 toListF x          = err1 x $ \x' -> ["Cannot iterate over", x']
 
 toG :: (Applicative m, Monoid (m e), PureValue e, HasValue e) => Filter -> GFilter m e
@@ -368,12 +376,12 @@ arrayF f x = [Array (V.fromList $ f x)]
 dist :: Obj [Value] -> [Obj Value]
 dist = sequence
 
-asObjectKey :: Value -> Text
-asObjectKey (String x) = x
+asObjectKey :: Value -> Key
+asObjectKey (String x) = K.fromText x
 asObjectKey x          = err1 x $ \x' -> ["Cannot use", x', "as object key"]
 
 objectF :: Obj Filter -> Filter
-objectF o x = fmap (Object . H.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($x) $ o
+objectF o x = fmap (Object . KM.fromList . fmap (first asObjectKey) . unObj) . dist . fmap ($x) $ o
 
 op2VF :: Monad m => Op2 e -> Op1 (GFilter m e)
 op2VF op f inp = do
@@ -474,7 +482,7 @@ composeF :: Foldable t => t (F a) -> F a
 composeF = fold
 
 toEntry :: (Value,Value) -> Value
-toEntry (k,v) = Object $ H.fromList [("key",k),("value",v)]
+toEntry (k,v) = Object $ KM.fromList [("key",k),("value",v)]
 
 toEntries :: [(Value,Value)] -> Value
 toEntries = Array . V.fromList . fmap toEntry
@@ -483,7 +491,7 @@ toEntries = Array . V.fromList . fmap toEntry
 -- def to_entries: [keys[] as $k | {key: $k, value: .[$k]}];
 -- However I have no plan to implement variables yet
 toEntriesOp :: ValueOp1
-toEntriesOp (Object o) = toEntries . fmap (first String) . H.toList $ o
+toEntriesOp (Object o) = toEntries . fmap (first (String . K.toText)) . KM.toList $ o
 toEntriesOp (Array  v) = toEntries . zip ((Number . fromInteger) <$> [0..]) . V.toList $ v
 toEntriesOp x = err1 x $ \x' -> [x', "has no keys"]
 
@@ -907,10 +915,10 @@ filterOp2 = lookupOp tbl 2 where
             ,("_minus"     , (-|))
             ,("_divide"    , (/|))
             ,("_mod"       , (%|))
-            ,("_less"      , boolOp2 (<))
-            ,("_lesseq"    , boolOp2 (<=))
-            ,("_greatereq" , boolOp2 (>=))
-            ,("_greater"   , boolOp2 (>))
+            ,("_less"      , boolOp2Ord (<))
+            ,("_lesseq"    , boolOp2Ord (<=))
+            ,("_greatereq" , boolOp2Ord (>=))
+            ,("_greater"   , boolOp2Ord (>))
             ,("_equal"     , boolOp2 (==))
             ,("_notequal"  , boolOp2 (/=))
             ,("_at"        , at)
@@ -1276,7 +1284,7 @@ outputValue :: Bool -> Bool -> Value -> IO ()
 outputValue False raw_output = L8.putStrLn . encodeValue raw_output
 outputValue True  raw_output = mapM_ L.putStr . ($["\n"]) . f
   where f (Array a)   = t"[" . cat (intersperse (t"\n,") (map j . V.toList $ a)) . t"]"
-        f (Object o)  = t"{" . cat (intersperse (t"\n,") (map g . H.toList $ o)) . t"}"
+        f (Object o)  = t"{" . cat (intersperse (t"\n,") (map g . KM.toList $ o)) . t"}"
         f v           = t $ encodeValue raw_output v
         g (key, val)  = t (encode key) . t(L8.pack ":") . j val
         j             = t . encode

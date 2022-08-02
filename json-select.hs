@@ -1,5 +1,7 @@
 import Data.List
-import qualified Data.HashMap.Strict as HM
+import Data.Monoid
+import qualified Data.Aeson.Key as K
+import qualified Data.Aeson.KeyMap as KM
 import Control.Arrow
 import Data.Aeson
 import System.Environment (getArgs)
@@ -11,13 +13,13 @@ import Data.Text (Text)
 import qualified Data.Vector as V
 
 data Frame = ArrayFrm Array Array
-           | ObjectFrm Text Object
+           | ObjectFrm Key Object
   deriving (Show)
 
 type Context = [Frame]
 
 data Segment = ArrayIndex Int
-             | ObjectKey  Text
+             | ObjectKey  Key
 type Path = [Segment]
 
 type MultiPath = [Maybe Segment] -- Nothing means '*'
@@ -39,9 +41,9 @@ selectJSONSegment (ArrayIndex ix) (Array vs)
         | otherwise     -> Right (ArrayFrm prefix (V.tail suffix), V.head suffix)
   where msg = "An array with an index "++show ix++" was expected"
 selectJSONSegment (ObjectKey f) (Object o)
-  = maybe (Left msg) ok . HM.lookup f $ o
+  = maybe (Left msg) ok . KM.lookup f $ o
   where msg   = "An object with a field "++show f++" was expected"
-        ok x  = Right (ObjectFrm f (HM.delete f o), x)
+        ok x  = Right (ObjectFrm f (KM.delete f o), x)
 selectJSONSegment (ArrayIndex  _) _
   = Left "An array was expected"
 selectJSONSegment (ObjectKey   _) _
@@ -63,8 +65,8 @@ allSubValues (cxt, Array vs)
     | V.null vs = []
     | otherwise = zips f (V.toList vs)
   where f prefix value suffix = (ArrayFrm (V.fromList prefix) (V.fromList suffix) : cxt, value)
-allSubValues (cxt, Object o) = map (first f) . HM.toList $ o
-  where f key = ObjectFrm key (HM.delete key o) : cxt
+allSubValues (cxt, Object o) = map (first f) . KM.toList $ o
+  where f key = ObjectFrm key (KM.delete key o) : cxt
 allSubValues _ = []
 
 selectJSONMaybeSegment :: Maybe Segment -> CxtValue -> [CxtValue]
